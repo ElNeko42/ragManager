@@ -210,15 +210,15 @@ class DocumentDetailView(APIView):
     def patch(self, request, document_id):
         """Rename a document, move it, or switch its agent flag.
 
-        Switching the flag on does not queue anything yet; wiring that to the
-        ingestion queue is the next milestone.
+        Switching the flag on queues the document for vectorising the first
+        time; switching it off only hides its chunks from searches, so
+        switching it back on makes them available again with no reprocessing.
         """
         document = get_object_or_404(Document, pk=document_id)
         serializer = DocumentUpdateSerializer(data=request.data, instance=document)
         serializer.is_valid(raise_exception=True)
-        for field, value in serializer.validated_data.items():
-            setattr(document, field, value)
-        document.save()
+        with transaction.atomic():
+            document = services.update_document(document, serializer.validated_data)
         return Response(DocumentSerializer(document).data)
 
     def delete(self, request, document_id):

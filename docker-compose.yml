@@ -75,12 +75,14 @@ services:
   backend:
     build:
       context: ./backend
+    image: ragmanager-app
     restart: unless-stopped
     command: ["web"]
     env_file:
       - .env
     volumes:
       - ./backend:/app
+      - model_cache:/models
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-8000}:8000"
     depends_on:
@@ -96,12 +98,14 @@ services:
   worker:
     build:
       context: ./backend
+    image: ragmanager-app
     restart: unless-stopped
     command: ["worker"]
     env_file:
       - .env
     volumes:
       - ./backend:/app
+      - model_cache:/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,3 +133,4 @@ volumes:
   qdrant_data:
   minio_data:
   frontend_modules:
+  model_cache:

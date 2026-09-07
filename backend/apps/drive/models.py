@@ -7,12 +7,15 @@ from django.db import models
 
 
 class EmbeddingProvider(models.TextChoices):
-    """Where the embeddings of a collection are computed."""
+    """Where the embeddings of a collection are computed.
 
-    LOCAL = "local", "Local"
-    OPENAI = "openai", "OpenAI"
-    GEMINI = "gemini", "Gemini"
-    COHERE = "cohere", "Cohere"
+    Deliberately free of vendor names: anything reachable over an OpenAI
+    compatible endpoint is the same provider as far as this project cares, and
+    which company runs it is a matter of configuration, not of code.
+    """
+
+    LOCAL = "local", "Local model"
+    API = "api", "API endpoint"
 
 
 class ProcessingStatus(models.TextChoices):
@@ -44,6 +47,7 @@ class Collection(models.Model):
         ],
     )
     provider = models.CharField(max_length=16, choices=EmbeddingProvider.choices)
+    base_url = models.URLField(max_length=500, blank=True, default="")
     model_name = models.CharField(max_length=200)
     vector_size = models.PositiveIntegerField()
     is_default = models.BooleanField(default=False)
@@ -61,6 +65,13 @@ class Collection(models.Model):
             models.CheckConstraint(
                 condition=models.Q(provider__in=EmbeddingProvider.values),
                 name="collections_provider_in_choices",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(provider=EmbeddingProvider.LOCAL)
+                    | ~models.Q(base_url="")
+                ),
+                name="collections_api_requires_base_url",
             ),
         ]
 

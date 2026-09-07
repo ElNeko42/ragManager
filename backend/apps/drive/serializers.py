@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from apps.drive.models import Collection, Document, Folder
+from apps.drive.models import Collection, Document, EmbeddingProvider, Folder
 from apps.drive.services import is_within
 
 
@@ -13,6 +13,7 @@ class CollectionSerializer(serializers.ModelSerializer):
             "collection_id",
             "name",
             "provider",
+            "base_url",
             "model_name",
             "vector_size",
             "is_default",
@@ -31,6 +32,24 @@ class CollectionCreateSerializer(CollectionSerializer):
         if Collection.objects.filter(name=value).exists():
             raise serializers.ValidationError("A collection with this name already exists")
         return value
+
+    def validate(self, attrs):
+        """Require a base URL for a collection served by an API.
+
+        A local collection must not carry one, so that the provider always
+        tells the whole story of where the vectors come from.
+        """
+        provider = attrs.get("provider")
+        base_url = attrs.get("base_url", "")
+        if provider == EmbeddingProvider.API and not base_url:
+            raise serializers.ValidationError(
+                {"base_url": "A collection served by an API needs the endpoint base URL"}
+            )
+        if provider == EmbeddingProvider.LOCAL and base_url:
+            raise serializers.ValidationError(
+                {"base_url": "A local collection does not use a base URL"}
+            )
+        return attrs
 
 
 class CollectionUpdateSerializer(serializers.Serializer):

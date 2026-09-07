@@ -1,13 +1,42 @@
 """Domain operations over the folder tree and its documents."""
 
 import logging
+import mimetypes
+from pathlib import Path
 
 from django.db import transaction
 
 from apps.drive import storage
-from apps.drive.models import Document, Folder
+from apps.drive.models import Document, Folder, ProcessingStatus
+from apps.ingestion import services as ingestion
 
 logger = logging.getLogger(__name__)
+
+GENERIC_MEDIA_TYPE = "application/octet-stream"
+WORD_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+KNOWN_SUFFIX_MEDIA_TYPES = {".docx": WORD_MEDIA_TYPE}
+
+
+def resolve_content_type(upload_file, name):
+    """Work out the media type of an uploaded file.
+
+    Takes the uploaded file and the name it will be stored under. Clients
+    disagree about the type they send for office formats and many send the
+    generic binary type, which would leave the pipeline unable to pick an
+    extractor for a file it can perfectly well read, so an uninformative
+    value is replaced by the one the extension implies. The office suffixes
+    are listed here rather than left to the interpreter, whose table is
+    populated from an operating system file that slim images do not ship.
+    Returns the media type.
+    """
+    declared = upload_file.content_type or ""
+    if declared and declared != GENERIC_MEDIA_TYPE:
+        return declared
+    suffix = Path(name).suffix.lower()
+    if suffix in KNOWN_SUFFIX_MEDIA_TYPES:
+        return KNOWN_SUFFIX_MEDIA_TYPES[suffix]
+    guessed, _ = mimetypes.guess_type(name)
+    return guessed or GENERIC_MEDIA_TYPE
 
 
 def get_root_folder():
@@ -55,7 +84,7 @@ def create_document(folder, upload_file, name):
     document = Document.objects.create(
         folder=folder,
         name=name,
-        content_type=upload_file.content_type or "application/octet-stream",
+        content_type=resolve_content_type(upload_file, name),
         size_bytes=upload_file.size,
         storage_key="",
     )
@@ -75,7 +104,7 @@ def replace_document(document, upload_file):
     """
     previous_key = document.storage_key
     document.revision += 1
-    document.content_type = upload_file.content_type or "application/octet-stream"
+    document.content_type = resolve_content_type(upload_file, document.name)
     document.size_bytes = upload_file.size
     document.storage_key = storage.build_key(document.pk, document.revision, document.name)
     document.processing_status = None
@@ -93,14 +122,20 @@ def replace_document(document, upload_file):
         ]
     )
     schedule_object_cleanup([previous_key])
+    ingestion.discard_vectors(document.folder.collection.name, document.pk)
+    if document.is_agent_active:
+        ingestion.enqueue(document)
     return document
 
 
 def delete_document(document):
-    """Delete a document and the object backing it."""
+    """Delete a document, the object backing it and its stored vectors."""
     key = document.storage_key
+    collection_name = document.folder.collection.name
+    document_id = document.pk
     document.delete()
     schedule_object_cleanup([key])
+    ingestion.discard_vectors(collection_name, document_id)
 
 
 def delete_folder_tree(folder):
@@ -111,12 +146,18 @@ def delete_folder_tree(folder):
     purpose so that nothing is ever removed by an implicit cascade.
     """
     folders = descendant_folders(folder)
-    documents = Document.objects.filter(folder__in=folders)
-    keys = list(documents.values_list("storage_key", flat=True))
+    documents = Document.objects.filter(folder__in=folders).select_related("folder__collection")
+    keys = []
+    stored_vectors = []
+    for document in documents:
+        keys.append(document.storage_key)
+        stored_vectors.append((document.folder.collection.name, document.pk))
     documents.delete()
     for node in reversed(folders):
         node.delete()
     schedule_object_cleanup(keys)
+    for collection_name, document_id in stored_vectors:
+        ingestion.discard_vectors(collection_name, document_id)
 
 
 def schedule_object_cleanup(keys):
@@ -139,3 +180,46 @@ def schedule_object_cleanup(keys):
             logger.exception("Could not delete %d object(s) from storage", len(keys))
 
     transaction.on_commit(cleanup)
+
+
+def update_document(document, changes):
+    """Apply a rename, a move or an agent flag switch, keeping Qdrant in step.
+
+    Takes the document and the validated changes. A move inside the same
+    collection only rewrites the folder on the stored points; a move into a
+    folder using a different embedding model drops them and queues a fresh run,
+    because vectors of different models are not interchangeable. Switching the
+    flag off never deletes anything and switching it back on never reprocesses
+    a document that is already indexed. Returns the updated document.
+    """
+    previous_collection = document.folder.collection
+    was_active = document.is_agent_active
+    was_ready = document.processing_status == ProcessingStatus.READY
+    previous_folder_id = document.folder_id
+    for field, value in changes.items():
+        setattr(document, field, value)
+    document.save()
+    document.refresh_from_db()
+    collection = document.folder.collection
+
+    if collection.pk != previous_collection.pk:
+        ingestion.discard_vectors(previous_collection.name, document.pk)
+        document.processing_status = None
+        document.chunk_count = 0
+        document.save(update_fields=["processing_status", "chunk_count", "updated_at"])
+        if document.is_agent_active:
+            ingestion.enqueue(document)
+        return document
+
+    if document.folder_id != previous_folder_id and was_ready:
+        ingestion.apply_payload(
+            collection.name, document.pk, {"folder_id": str(document.folder_id)}
+        )
+    if document.is_agent_active and not was_active:
+        if was_ready:
+            ingestion.apply_payload(collection.name, document.pk, {"is_agent_active": True})
+        else:
+            ingestion.enqueue(document)
+    elif was_active and not document.is_agent_active and was_ready:
+        ingestion.apply_payload(collection.name, document.pk, {"is_agent_active": False})
+    return document
