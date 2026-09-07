@@ -128,6 +128,23 @@ CSRF_COOKIE_HTTPONLY = False
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS")
 
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.agents.authentication.AgentTokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
+    "NUM_PROXIES": 1 if PUBLIC_HOST else 0,
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("CACHE_URL", "redis://redis:6379/1"),
+    }
+}
+
 CELERY_BROKER_URL = env("REDIS_URL", "redis://redis:6379/0")
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_RESULT_BACKEND = None

@@ -3,6 +3,7 @@
 import uuid
 
 from django.db import models
+from django.utils import timezone
 
 
 class Agent(models.Model):
@@ -19,6 +20,15 @@ class Agent(models.Model):
     def __str__(self):
         """Return the agent name."""
         return self.name
+
+    @property
+    def is_authenticated(self):
+        """Report that a resolved agent counts as an authenticated principal.
+
+        Django REST Framework asks this of whatever it puts on request.user,
+        and an agent only ever reaches that attribute through a valid token.
+        """
+        return True
 
 
 class AgentToken(models.Model):
@@ -43,3 +53,14 @@ class AgentToken(models.Model):
     def __str__(self):
         """Return the agent name and the non secret token prefix."""
         return f"{self.agent.name} ({self.token_prefix}…)"
+
+    def is_valid(self, at=None):
+        """Report whether the token may still authenticate its agent.
+
+        Takes the moment to evaluate, defaulting to now. Returns False once
+        the token has been revoked or its expiry has passed.
+        """
+        moment = at or timezone.now()
+        if self.revoked_at is not None:
+            return False
+        return self.expires_at is None or self.expires_at > moment
