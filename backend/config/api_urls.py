@@ -5,4 +5,6 @@ from django.urls import include, path
 urlpatterns = [
     path("auth/", include("apps.accounts.urls")),
     path("agents/", include("apps.agents.urls")),
+    path("permissions/", include("apps.access.urls")),
+    path("", include("apps.drive.urls")),
 ]

@@ -26,6 +26,12 @@ def env_bool(name, default=False):
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def env_int(name, default=None):
+    """Read an environment variable as an integer."""
+    value = env(name)
+    return default if value is None else int(value)
+
+
 def env_list(name, default=None):
     """Read an environment variable as a comma separated list of strings."""
     value = env(name)
@@ -159,6 +165,8 @@ S3_REGION = env("S3_REGION", "us-east-1")
 S3_BUCKET = env("S3_BUCKET", "ragmanager")
 S3_ACCESS_KEY_ID = env("S3_ACCESS_KEY_ID")
 S3_SECRET_ACCESS_KEY = env("S3_SECRET_ACCESS_KEY")
+
+MAX_UPLOAD_BYTES = env_int("MAX_UPLOAD_BYTES", 536870912)
 
 LOGGING = {
     "version": 1,
