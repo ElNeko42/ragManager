@@ -56,7 +56,14 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    "apps.accounts",
+    "apps.agents",
+    "apps.drive",
+    "apps.access",
+    "apps.ingestion",
 ]
+
+AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
