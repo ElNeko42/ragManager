@@ -1,6 +1,5 @@
 """Management endpoints for collections, folders and documents."""
 
-from django.conf import settings
 from django.db import transaction
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
@@ -10,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsOwner
+from apps.common.validation import parse_uuid
 from apps.drive import services, storage
 from apps.drive.models import Collection, Document, Folder
 from apps.drive.serializers import (
@@ -169,32 +169,30 @@ class DocumentListCreateView(APIView):
         documents = Document.objects.all()
         folder_id = request.query_params.get("folder")
         if folder_id:
-            documents = documents.filter(folder_id=folder_id)
+            documents = documents.filter(folder_id=parse_uuid(folder_id, "folder"))
         return Response(DocumentSerializer(documents, many=True).data)
 
     def post(self, request):
         """Upload a file into a folder.
 
         Takes the file, the destination folder and optionally a display name.
-        The document is stored but nothing is queued: vectorising only starts
-        when the agent flag is switched on. Returns the stored document.
+        The whole thing runs in one transaction, so a storage failure leaves no
+        row behind holding a name nobody can reuse. The document is stored but
+        nothing is queued: vectorising only starts when the agent flag is
+        switched on. Returns the stored document.
         """
         upload_file = request.FILES.get("file")
         if upload_file is None:
             return Response({"file": "A file is required"}, status=status.HTTP_400_BAD_REQUEST)
-        if upload_file.size > settings.MAX_UPLOAD_BYTES:
-            return Response(
-                {"file": f"The file exceeds the {settings.MAX_UPLOAD_BYTES} byte limit"},
-                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            )
-        folder = get_object_or_404(Folder, pk=request.data.get("folder"))
+        folder = get_object_or_404(Folder, pk=parse_uuid(request.data.get("folder"), "folder"))
         name = request.data.get("name") or upload_file.name
         if Document.objects.filter(folder=folder, name=name).exists():
             return Response(
                 {"name": "A document with this name already exists in that folder"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        document = services.create_document(folder, upload_file, name)
+        with transaction.atomic():
+            document = services.create_document(folder, upload_file, name)
         return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
 
@@ -250,17 +248,13 @@ class DocumentContentView(APIView):
 
         Takes the new file. Bumps the revision, drops the previous object and
         clears the processing state, since the chunks of the old revision no
-        longer describe this file. Returns the updated document.
+        longer describe this file. Oversized bodies are refused before they
+        reach here. Returns the updated document.
         """
         document = get_object_or_404(Document, pk=document_id)
         upload_file = request.FILES.get("file")
         if upload_file is None:
             return Response({"file": "A file is required"}, status=status.HTTP_400_BAD_REQUEST)
-        if upload_file.size > settings.MAX_UPLOAD_BYTES:
-            return Response(
-                {"file": f"The file exceeds the {settings.MAX_UPLOAD_BYTES} byte limit"},
-                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            )
         with transaction.atomic():
             document = services.replace_document(document, upload_file)
         return Response(DocumentSerializer(document).data)

@@ -41,7 +41,7 @@ def env_list(name, default=None):
 
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
-DEBUG = env_bool("DJANGO_DEBUG", False)
+DEBUG = False
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
@@ -74,6 +74,8 @@ AUTH_USER_MODEL = "accounts.User"
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "config.middleware.RequestSizeLimitMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

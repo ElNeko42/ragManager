@@ -9,6 +9,13 @@ the MCP server.
 Permissions are granted to agents, each with its own identity and token, not to
 people.
 
+## Status
+
+Under construction. The management API, authentication and the ingestion
+pipeline work; the MCP server and the permission resolver do not exist yet, so
+no agent can query documents at the moment. The web panel currently renders
+only the health report.
+
 ## Stack
 
 | Piece | Choice |
@@ -56,8 +63,22 @@ docker compose up --build
 | Qdrant dashboard | http://localhost:6333/dashboard |
 
 Every port is published on `127.0.0.1` only. On a remote server, reach them
-through an SSH tunnel rather than opening the ports, and never expose the
-development settings module to the internet.
+through an SSH tunnel rather than opening the ports.
+
+## Development mode
+
+`DJANGO_SETTINGS_MODULE` is the only switch. It decides the debug pages, the
+server and the static file handling together, so there is no combination of
+variables that serves debug tracebacks while looking like production:
+
+| Value | Debug pages | Server |
+| --- | --- | --- |
+| `config.settings.prod` (default) | off | gunicorn |
+| `config.settings.dev` | on | runserver, with autoreload |
+
+Production settings refuse to start without a secret key or with `*` in the
+allowed hosts, and development settings warn when `PUBLIC_HOST` is set, because
+that combination puts debug tracebacks on a public address.
 
 If any of those ports is already taken on the host, change the matching
 `*_HOST_PORT` value in `.env`. Only the published side moves; the containers
@@ -115,8 +136,9 @@ needs no CORS exception at all.
 
 `GET /health/` probes PostgreSQL, Redis, Qdrant and the object storage bucket.
 It answers `200` when every service is reachable and `503` as soon as one is
-not, naming the one that failed. The web panel renders the same report on its
-front page.
+not, naming the one that failed. The reason a probe failed is added only for a
+signed in owner, since driver errors quote hosts, users and endpoints. The web
+panel renders the same report on its front page.
 
 ## Project layout
 

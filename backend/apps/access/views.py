@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from apps.access.models import Permission
 from apps.access.serializers import PermissionSerializer, PermissionUpdateSerializer
 from apps.accounts.permissions import IsOwner
+from apps.common.validation import parse_uuid
 
 
 class PermissionListCreateView(APIView):
@@ -20,7 +21,7 @@ class PermissionListCreateView(APIView):
         permissions = Permission.objects.all()
         agent_id = request.query_params.get("agent")
         if agent_id:
-            permissions = permissions.filter(agent_id=agent_id)
+            permissions = permissions.filter(agent_id=parse_uuid(agent_id, "agent"))
         return Response(PermissionSerializer(permissions, many=True).data)
 
     def post(self, request):

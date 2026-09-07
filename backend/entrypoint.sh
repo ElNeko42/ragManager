@@ -4,10 +4,15 @@ set -e
 case "$1" in
   web)
     python manage.py migrate --noinput
-    if [ "${DJANGO_DEBUG}" = "true" ]; then
-      exec python manage.py runserver 0.0.0.0:8000
-    fi
-    exec gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    case "${DJANGO_SETTINGS_MODULE}" in
+      *.dev)
+        exec python manage.py runserver 0.0.0.0:8000
+        ;;
+      *)
+        python manage.py collectstatic --noinput
+        exec gunicorn config.wsgi:application --bind 0.0.0.0:8000
+        ;;
+    esac
     ;;
   worker)
     exec celery -A config worker --loglevel=info

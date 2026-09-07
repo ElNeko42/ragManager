@@ -74,7 +74,10 @@ def health(request):
     """Report whether every backing service answers.
 
     Responds with 200 when all services are reachable and 503 as soon as one
-    of them is not, listing the outcome of each individual probe.
+    of them is not, listing the outcome of each individual probe. The reason a
+    probe failed is added only for a signed in owner: the text a driver
+    returns names hosts, users and endpoints, which is far more than an
+    anonymous caller needs in order to learn that something is down.
     """
     probes = {
         "postgres": check_postgres(),
@@ -82,8 +85,10 @@ def health(request):
         "qdrant": check_qdrant(),
         "object_storage": check_object_storage(),
     }
+    trusted = getattr(request, "user", None) is not None and request.user.is_authenticated
     services = {
-        name: {"healthy": healthy, "detail": detail} for name, (healthy, detail) in probes.items()
+        name: {"healthy": healthy, "detail": detail} if trusted else {"healthy": healthy}
+        for name, (healthy, detail) in probes.items()
     }
     healthy = all(service["healthy"] for service in services.values())
     return JsonResponse(

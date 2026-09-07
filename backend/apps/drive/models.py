@@ -100,7 +100,15 @@ class Folder(models.Model):
         db_table = "folders"
         ordering = ["name"]
         constraints = [
-            models.UniqueConstraint(fields=["parent", "name"], name="folders_unique_name_per_parent")
+            models.UniqueConstraint(
+                fields=["parent", "name"], name="folders_unique_name_per_parent"
+            ),
+            models.UniqueConstraint(
+                fields=["parent"],
+                condition=models.Q(parent__isnull=True),
+                nulls_distinct=False,
+                name="folders_only_one_root",
+            ),
         ]
 
     def __str__(self):
