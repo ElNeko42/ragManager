@@ -2,10 +2,10 @@
 
 import io
 
+from apps.common import media_types
 from apps.ingestion import imaging
 
 MIN_CHARS_PER_PAGE = 80
-WORD_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_MEDIA_TYPES = {"application/json", "application/xml"}
 
 
@@ -22,11 +22,11 @@ def extract_text(data, media_type):
     free. Returns the text. Raises ExtractionError for a type this build
     cannot read.
     """
-    if media_type == "application/pdf":
+    if media_type == media_types.PDF:
         return extract_pdf(data)
     if media_type.startswith("image/"):
         return imaging.describe(data, media_type)
-    if media_type == WORD_MEDIA_TYPE:
+    if media_type == media_types.WORD:
         return extract_word(data)
     if media_type.startswith("text/") or media_type in TEXT_MEDIA_TYPES:
         return data.decode("utf-8", errors="replace")
@@ -47,7 +47,7 @@ def extract_pdf(data):
     text = "\n".join(pages).strip()
     if len(text) >= MIN_CHARS_PER_PAGE * max(len(pages), 1):
         return text
-    return imaging.describe(data, "application/pdf")
+    return imaging.describe(data, media_types.PDF)
 
 
 def extract_word(data):

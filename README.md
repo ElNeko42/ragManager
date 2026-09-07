@@ -22,7 +22,7 @@ only the health report.
 | --- | --- |
 | API | Django + Django REST Framework |
 | Web panel | Vue 3 single page application |
-| Relational data | PostgreSQL |
+| Relational data | PostgreSQL 15 or newer |
 | Vectors | Qdrant |
 | Files | S3 compatible object storage (MinIO when self-hosting) |
 | Queue | Celery over Redis |
@@ -76,13 +76,39 @@ variables that serves debug tracebacks while looking like production:
 | `config.settings.prod` (default) | off | gunicorn |
 | `config.settings.dev` | on | runserver, with autoreload |
 
-Production settings refuse to start without a secret key or with `*` in the
-allowed hosts, and development settings warn when `PUBLIC_HOST` is set, because
-that combination puts debug tracebacks on a public address.
+The panel has the same pair. `FRONTEND_TARGET=production` (the default) builds
+the application and serves the result with nginx; `FRONTEND_TARGET=development`
+runs the Vite server with hot reload. Both listen on the same port and both
+forward `/api/` and `/health/` to the backend, so the address does not change
+when you switch.
+
+Production settings refuse to start without a secret key, without allowed
+hosts, or with `*` among them. Development settings refuse to start at all when
+`PUBLIC_HOST` is set, because that combination puts debug tracebacks on a
+public address; `ALLOW_PUBLIC_DEBUG=true` overrides it if you accept that.
+
+`TRUSTED_PROXY_COUNT` is how many reverse proxies sit in front. It ships as `0`,
+which makes rate limiting count the address the connection came from. Raise it
+to the number of proxies you actually run: setting it higher than that lets a
+caller forge the address it is counted under.
 
 If any of those ports is already taken on the host, change the matching
 `*_HOST_PORT` value in `.env`. Only the published side moves; the containers
 keep talking to each other on their standard ports.
+
+## Embedding providers
+
+A collection names the model that produced its vectors. `local` runs a
+sentence-transformers model inside the container and needs no account
+anywhere; `api` points at any endpoint that speaks the OpenAI embeddings
+shape, which covers most hosted providers as well as a model you run yourself.
+
+`EMBEDDING_API_KEY` is the shared credential. A collection can carry its own by
+setting `EMBEDDING_API_KEY_<NAME>` — the collection name upper cased with
+hyphens turned into underscores, so `openai-large` reads
+`EMBEDDING_API_KEY_OPENAI_LARGE`. Give each collection its own key when they
+live at different providers, so one provider's credential is never sent to
+another.
 
 ## Running behind a reverse proxy
 

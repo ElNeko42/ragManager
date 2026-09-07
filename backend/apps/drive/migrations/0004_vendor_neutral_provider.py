@@ -3,6 +3,26 @@
 from django.db import migrations, models
 
 
+
+PLACEHOLDER_BASE_URL = "https://replace-me.invalid/v1"
+
+
+def adopt_neutral_provider(apps, schema_editor):
+    """Convert collections named after a vendor into endpoint backed ones.
+
+    The provider used to be one of several company names; it is now either a
+    local model or an API endpoint. Rows carrying an old name are moved to the
+    endpoint form, and since nothing recorded which URL they pointed at, they
+    get a reserved address that can never resolve. That makes the collection
+    fail loudly with a connection error the first time it is used, instead of
+    blocking this migration or, worse, sending its credential somewhere real.
+    """
+    Collection = apps.get_model("drive", "Collection")
+    stale = Collection.objects.exclude(provider__in=["local", "api"])
+    stale.update(provider="api")
+    Collection.objects.filter(provider="api", base_url="").update(base_url=PLACEHOLDER_BASE_URL)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -24,6 +44,7 @@ class Migration(migrations.Migration):
             name='provider',
             field=models.CharField(choices=[('local', 'Local model'), ('api', 'API endpoint')], max_length=16),
         ),
+        migrations.RunPython(adopt_neutral_provider, migrations.RunPython.noop),
         migrations.AddConstraint(
             model_name='collection',
             constraint=models.CheckConstraint(condition=models.Q(('provider__in', ['local', 'api'])), name='collections_provider_in_choices'),

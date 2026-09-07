@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 
-from apps.access.models import Permission
+from apps.access.models import Permission, PermissionEffect
 
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -35,4 +35,4 @@ class PermissionSerializer(serializers.ModelSerializer):
 
 
 class PermissionUpdateSerializer(serializers.Serializer):
-    effect = serializers.ChoiceField(choices=Permission._meta.get_field("effect").choices)
+    effect = serializers.ChoiceField(choices=PermissionEffect.choices)

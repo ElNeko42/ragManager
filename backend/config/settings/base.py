@@ -18,14 +18,6 @@ def env(name, default=None):
     return value
 
 
-def env_bool(name, default=False):
-    """Read an environment variable as a boolean flag."""
-    value = env(name)
-    if value is None:
-        return default
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
 def env_int(name, default=None):
     """Read an environment variable as an integer."""
     value = env(name)
@@ -42,7 +34,7 @@ def env_list(name, default=None):
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = False
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 PUBLIC_HOST = env("PUBLIC_HOST")
@@ -143,7 +135,7 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
-    "NUM_PROXIES": 1 if PUBLIC_HOST else 0,
+    "NUM_PROXIES": env_int("TRUSTED_PROXY_COUNT", 1 if PUBLIC_HOST else 0),
 }
 
 CACHES = {
@@ -158,6 +150,9 @@ CELERY_TASK_IGNORE_RESULT = True
 CELERY_RESULT_BACKEND = None
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+INGESTION_SOFT_TIME_LIMIT_SECONDS = env_int("INGESTION_SOFT_TIME_LIMIT_SECONDS", 900)
+INGESTION_TIME_LIMIT_SECONDS = env_int("INGESTION_TIME_LIMIT_SECONDS", 960)
 
 QDRANT_URL = env("QDRANT_URL", "http://qdrant:6333")
 QDRANT_API_KEY = env("QDRANT_API_KEY")

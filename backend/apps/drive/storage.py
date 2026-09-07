@@ -2,9 +2,11 @@
 
 import boto3
 from django.conf import settings
+from django.core.exceptions import SuspiciousFileOperation
 from django.utils.text import get_valid_filename
 
 DELETE_BATCH_SIZE = 1000
+FALLBACK_FILENAME = "file"
 
 
 def get_client():
@@ -25,7 +27,22 @@ def build_key(document_id, revision, name):
     revision belongs in the key so that replacing a file never lets a cached
     copy of the previous one be served. Returns the key.
     """
-    return f"documents/{document_id}/{revision}/{get_valid_filename(name)}"
+    return f"documents/{document_id}/{revision}/{safe_filename(name)}"
+
+
+def safe_filename(name):
+    """Reduce a display name to something usable as an object key.
+
+    Takes the display name. Names made only of emoji, dots or spaces reduce to
+    nothing, which the sanitiser rejects outright, so those fall back to a
+    fixed word: the real name lives in the database and the key only has to be
+    stable and harmless. Returns the sanitised name.
+    """
+    try:
+        sanitised = get_valid_filename(name)
+    except SuspiciousFileOperation:
+        return FALLBACK_FILENAME
+    return sanitised or FALLBACK_FILENAME
 
 
 def upload(key, fileobj, content_type):

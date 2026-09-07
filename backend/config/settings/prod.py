@@ -15,7 +15,9 @@ if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when running with production settings")
 
 if not ALLOWED_HOSTS:
-    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must list the hostnames this instance answers to")
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS must list the hostnames this instance answers to"
+    )
 
 if "*" in ALLOWED_HOSTS:
     raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must name hosts explicitly rather than use '*'")

@@ -1,5 +1,7 @@
 """Turning text into vectors with the model a collection was created for."""
 
+import os
+
 import httpx
 from django.conf import settings
 
@@ -40,7 +42,7 @@ def embed_texts(collection, texts):
     if collection.provider == EmbeddingProvider.LOCAL:
         vectors = embed_locally(collection.model_name, texts)
     else:
-        vectors = embed_through_api(collection.base_url, collection.model_name, texts)
+        vectors = embed_through_api(collection, texts)
     if len(vectors[0]) != collection.vector_size:
         raise EmbeddingError(
             f"The model returned {len(vectors[0])} dimensions but the collection "
@@ -59,23 +61,38 @@ def embed_locally(model_name, texts):
     return model.encode(texts, normalize_embeddings=True).tolist()
 
 
-def embed_through_api(base_url, model_name, texts):
+def get_api_key(collection):
+    """Find the credential belonging to a collection's endpoint.
+
+    Takes the collection and looks for a key named after it, falling back to
+    the shared one. An instance holding collections at two different providers
+    would otherwise send one provider's credential to the other, since the
+    endpoint is chosen per collection but the key was not. The keys stay in the
+    environment rather than in the row, because the row is readable from the
+    database. Returns the key, or None when none is configured.
+    """
+    suffix = collection.name.upper().replace("-", "_")
+    return os.environ.get(f"EMBEDDING_API_KEY_{suffix}") or settings.EMBEDDING_API_KEY
+
+
+def embed_through_api(collection, texts):
     """Embed texts through an OpenAI compatible embeddings endpoint.
 
-    Takes the base URL of the service, the model name and the texts. Any
-    provider exposing that shape works unchanged, so the choice of company is
-    configuration rather than code. Returns the vectors in request order.
-    Raises EmbeddingError when the service answers with an error or a body
-    that does not carry one vector per text.
+    Takes the collection, which carries the endpoint and the model, and the
+    texts. Any provider exposing that shape works unchanged, so the choice of
+    company is configuration rather than code. Returns the vectors in request
+    order. Raises EmbeddingError when the service answers with an error or a
+    body that does not carry one vector per text.
     """
     headers = {"Content-Type": "application/json"}
-    if settings.EMBEDDING_API_KEY:
-        headers["Authorization"] = f"Bearer {settings.EMBEDDING_API_KEY}"
+    key = get_api_key(collection)
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     try:
         response = httpx.post(
-            f"{base_url.rstrip('/')}/embeddings",
+            f"{collection.base_url.rstrip('/')}/embeddings",
             headers=headers,
-            json={"model": model_name, "input": texts},
+            json={"model": collection.model_name, "input": texts},
             timeout=API_TIMEOUT_SECONDS,
         )
         response.raise_for_status()

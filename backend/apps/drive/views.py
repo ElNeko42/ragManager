@@ -1,7 +1,7 @@
 """Management endpoints for collections, folders and documents."""
 
 from django.db import transaction
-from django.http import StreamingHttpResponse
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -233,14 +233,20 @@ class DocumentContentView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def get(self, request, document_id):
-        """Stream the stored file back to the caller."""
+        """Stream the stored file back to the caller.
+
+        The response is built by the framework so that a name carrying quotes
+        or characters outside ASCII is encoded as the header format requires
+        instead of breaking it, and so that the declared length is the one it
+        actually sends rather than a stored figure that could disagree.
+        """
         document = get_object_or_404(Document, pk=document_id)
-        response = StreamingHttpResponse(
-            storage.open_stream(document.storage_key).iter_chunks(),
+        response = FileResponse(
+            storage.open_stream(document.storage_key),
+            as_attachment=True,
+            filename=document.name,
             content_type=document.content_type,
         )
-        response["Content-Disposition"] = f'attachment; filename="{document.name}"'
-        response["Content-Length"] = document.size_bytes
         return response
 
     def put(self, request, document_id):

@@ -2,6 +2,7 @@
 
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
 
@@ -114,6 +115,21 @@ class Folder(models.Model):
     def __str__(self):
         """Return the folder name."""
         return self.name
+
+    def clean(self):
+        """Reject a parent that would put this folder inside its own subtree.
+
+        A cycle cannot be expressed as a database constraint, and once written
+        it makes every walk of the tree run forever, so the check lives here
+        where the admin and any form both pass through it.
+        """
+        node = self.parent
+        seen = set()
+        while node is not None and node.pk not in seen:
+            if node.pk == self.pk:
+                raise ValidationError({"parent": "A folder cannot be placed inside itself"})
+            seen.add(node.pk)
+            node = node.parent
 
 
 class Document(models.Model):

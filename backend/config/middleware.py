@@ -4,6 +4,7 @@ from django.conf import settings
 from django.http import JsonResponse
 
 MULTIPART_FRAMING_ALLOWANCE = 4096
+METHODS_WITH_BODY = frozenset({"POST", "PUT", "PATCH"})
 
 
 class RequestSizeLimitMiddleware:
@@ -21,8 +22,17 @@ class RequestSizeLimitMiddleware:
         rather than from the parsed upload: by the time a file is reachable on
         the request, Django has already streamed the whole body to disk, so a
         limit enforced there rejects the work only after doing all of it.
+
+        A body sent without declaring its length is refused outright, because
+        a chunked request carries no length to compare and would otherwise walk
+        straight past the only limit there is.
         """
         declared = request.META.get("CONTENT_LENGTH") or ""
+        if request.method in METHODS_WITH_BODY and not declared.isdigit():
+            return JsonResponse(
+                {"detail": "A Content-Length header is required"},
+                status=411,
+            )
         if declared.isdigit():
             if int(declared) > settings.MAX_UPLOAD_BYTES + MULTIPART_FRAMING_ALLOWANCE:
                 return JsonResponse(

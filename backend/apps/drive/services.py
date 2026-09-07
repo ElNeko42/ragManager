@@ -6,15 +6,14 @@ from pathlib import Path
 
 from django.db import transaction
 
+from apps.common import media_types
 from apps.drive import storage
 from apps.drive.models import Document, Folder, ProcessingStatus
 from apps.ingestion import services as ingestion
 
 logger = logging.getLogger(__name__)
 
-GENERIC_MEDIA_TYPE = "application/octet-stream"
-WORD_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-KNOWN_SUFFIX_MEDIA_TYPES = {".docx": WORD_MEDIA_TYPE}
+KNOWN_SUFFIX_MEDIA_TYPES = {".docx": media_types.WORD}
 
 
 def resolve_content_type(upload_file, name):
@@ -30,18 +29,13 @@ def resolve_content_type(upload_file, name):
     Returns the media type.
     """
     declared = upload_file.content_type or ""
-    if declared and declared != GENERIC_MEDIA_TYPE:
+    if declared and declared != media_types.GENERIC:
         return declared
     suffix = Path(name).suffix.lower()
     if suffix in KNOWN_SUFFIX_MEDIA_TYPES:
         return KNOWN_SUFFIX_MEDIA_TYPES[suffix]
     guessed, _ = mimetypes.guess_type(name)
-    return guessed or GENERIC_MEDIA_TYPE
-
-
-def get_root_folder():
-    """Return the root folder created at installation."""
-    return Folder.objects.get(parent__isnull=True)
+    return guessed or media_types.GENERIC
 
 
 def descendant_folders(folder):
@@ -49,12 +43,20 @@ def descendant_folders(folder):
 
     Takes the folder to walk from. Returns a list ordered from the root of the
     subtree downwards, so reversing it yields the order in which folders can
-    be deleted without tripping the protected foreign keys.
+    be deleted without tripping the protected foreign keys. Folders already
+    seen are not followed again: a cycle written straight into the table would
+    otherwise make this walk run forever.
     """
     collected = [folder]
+    seen = {folder.pk}
     frontier = [folder]
     while frontier:
-        children = list(Folder.objects.filter(parent__in=frontier))
+        children = [
+            child
+            for child in Folder.objects.filter(parent__in=frontier)
+            if child.pk not in seen
+        ]
+        seen.update(child.pk for child in children)
         collected.extend(children)
         frontier = children
     return collected
@@ -64,12 +66,15 @@ def is_within(folder, candidate_parent):
     """Report whether a folder would end up inside its own subtree.
 
     Takes the folder being moved and the parent it would be moved under.
-    Returns True when the move would create a cycle.
+    Returns True when the move would create a cycle, and stops rather than
+    looping when the stored tree already contains one.
     """
     node = candidate_parent
-    while node is not None:
+    seen = set()
+    while node is not None and node.pk not in seen:
         if node.pk == folder.pk:
             return True
+        seen.add(node.pk)
         node = node.parent
     return False
 
@@ -79,7 +84,10 @@ def create_document(folder, upload_file, name):
 
     Takes the destination folder, the uploaded file and the display name.
     Returns the saved document, whose processing status stays null because
-    nothing is queued until the agent flag is switched on.
+    nothing is queued until the agent flag is switched on. The caller runs
+    this inside a transaction, so a storage failure leaves no row behind; the
+    reverse, a stored object whose row never committed, wastes space but
+    leaves nothing broken, which is the cheaper of the two failures.
     """
     document = Document.objects.create(
         folder=folder,

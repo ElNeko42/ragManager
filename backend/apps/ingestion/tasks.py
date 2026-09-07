@@ -3,6 +3,7 @@
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.utils import timezone
 
 from apps.drive import storage
@@ -13,7 +14,10 @@ from apps.ingestion.models import ProcessingJob
 logger = logging.getLogger(__name__)
 
 
-@shared_task
+@shared_task(
+    soft_time_limit=settings.INGESTION_SOFT_TIME_LIMIT_SECONDS,
+    time_limit=settings.INGESTION_TIME_LIMIT_SECONDS,
+)
 def process_document(job_id):
     """Extract, chunk, embed and store one document.
 
@@ -23,6 +27,8 @@ def process_document(job_id):
     in place, answering searches with text the file no longer contains. A
     failure is recorded on the job and on the document rather than raised, so
     the queue does not retry forever on a file it will never be able to read.
+    A run that overruns its budget is stopped and recorded the same way, so one
+    unreadable scan cannot hold the only worker forever.
     """
     from apps.ingestion.embeddings import embed_texts
 
