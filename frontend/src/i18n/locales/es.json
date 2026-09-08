@@ -1,0 +1,45 @@
+{
+  "app": {
+    "name": "ragManager",
+    "tagline": "Almacén de documentos autoalojado para agentes de IA"
+  },
+  "nav": {
+    "drive": "Documentos",
+    "agents": "Agentes",
+    "collections": "Colecciones",
+    "status": "Estado",
+    "signOut": "Cerrar sesión"
+  },
+  "login": {
+    "title": "Iniciar sesión",
+    "subtitle": "Esta instancia tiene un único propietario.",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "submit": "Entrar",
+    "submitting": "Entrando…",
+    "invalid": "Esas credenciales no son válidas.",
+    "throttled": "Demasiados intentos. Espera un momento y vuelve a probar.",
+    "unreachable": "El servidor no ha respondido. Comprueba que está en marcha."
+  },
+  "status": {
+    "title": "Estado",
+    "subtitle": "Si cada servicio de apoyo está respondiendo.",
+    "refresh": "Actualizar",
+    "healthy": "Activo",
+    "unhealthy": "Caído",
+    "allHealthy": "Todos los servicios responden.",
+    "someUnhealthy": "Hay un servicio que no responde.",
+    "services": {
+      "postgres": "Base de datos",
+      "redis": "Gestor de la cola",
+      "qdrant": "Almacén de vectores",
+      "object_storage": "Almacén de objetos"
+    }
+  },
+  "common": {
+    "loading": "Cargando…",
+    "retry": "Reintentar",
+    "language": "Idioma",
+    "unexpectedError": "Algo ha ido mal."
+  }
+}

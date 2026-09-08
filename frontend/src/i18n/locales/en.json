@@ -1,0 +1,45 @@
+{
+  "app": {
+    "name": "ragManager",
+    "tagline": "Self-hosted document storage for AI agents"
+  },
+  "nav": {
+    "drive": "Drive",
+    "agents": "Agents",
+    "collections": "Collections",
+    "status": "Status",
+    "signOut": "Sign out"
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "This instance has a single owner.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "invalid": "Those credentials are not valid.",
+    "throttled": "Too many attempts. Wait a moment and try again.",
+    "unreachable": "The server did not answer. Check that it is running."
+  },
+  "status": {
+    "title": "Status",
+    "subtitle": "Whether each backing service is answering.",
+    "refresh": "Refresh",
+    "healthy": "Up",
+    "unhealthy": "Down",
+    "allHealthy": "Every service is answering.",
+    "someUnhealthy": "A service is not answering.",
+    "services": {
+      "postgres": "Database",
+      "redis": "Queue broker",
+      "qdrant": "Vector store",
+      "object_storage": "Object storage"
+    }
+  },
+  "common": {
+    "loading": "Loading…",
+    "retry": "Try again",
+    "language": "Language",
+    "unexpectedError": "Something went wrong."
+  }
+}
