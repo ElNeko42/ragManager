@@ -1,10 +1,14 @@
 """Queueing and unwinding the vectorisation of documents."""
 
+import logging
+
 from django.db import transaction
 
 from apps.drive.models import ProcessingStatus
 from apps.ingestion import vectors
 from apps.ingestion.models import ProcessingJob
+
+logger = logging.getLogger(__name__)
 
 
 def enqueue(document):
@@ -27,11 +31,17 @@ def discard_vectors(collection_name, document_id):
     """Drop every stored point of a document once the transaction commits.
 
     Takes the Qdrant collection name and the document id. Deferring to commit
-    keeps a rolled back deletion from destroying vectors whose rows survived.
+    keeps a rolled back deletion from destroying vectors whose rows survived. A
+    failure here is logged rather than raised, because the rows are already
+    gone by then; the search stops returning those chunks anyway, since it
+    keeps only results whose document still exists.
     """
 
     def cleanup():
-        vectors.delete_document_points(collection_name, document_id)
+        try:
+            vectors.delete_document_points(collection_name, document_id)
+        except Exception:
+            logger.exception("Could not delete the vectors of document %s", document_id)
 
     transaction.on_commit(cleanup)
 
@@ -41,10 +51,16 @@ def apply_payload(collection_name, document_id, values):
 
     Takes the Qdrant collection name, the document id and the fields to
     overwrite. Used for moves and for the agent flag, neither of which changes
-    the text or the vectors, so nothing needs reprocessing.
+    the text or the vectors, so nothing needs reprocessing. A failure is logged
+    rather than raised: the row has already been committed by then, the search
+    confirms activation and location against the database anyway, and the next
+    update of the document pushes the whole desired state again.
     """
 
     def update():
-        vectors.set_document_payload(collection_name, document_id, values)
+        try:
+            vectors.set_document_payload(collection_name, document_id, values)
+        except Exception:
+            logger.exception("Could not update the stored payload of document %s", document_id)
 
     transaction.on_commit(update)

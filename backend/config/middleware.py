@@ -25,7 +25,9 @@ class RequestSizeLimitMiddleware:
 
         A body sent without declaring its length is refused outright, because
         a chunked request carries no length to compare and would otherwise walk
-        straight past the only limit there is.
+        straight past the only limit there is. A streaming transport such as
+        the MCP endpoint sends exactly that kind of body, so when one is added
+        its path has to be exempted here or every call to it answers 411.
         """
         declared = request.META.get("CONTENT_LENGTH") or ""
         if request.method in METHODS_WITH_BODY and not declared.isdigit():

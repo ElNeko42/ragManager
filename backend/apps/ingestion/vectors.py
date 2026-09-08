@@ -131,3 +131,71 @@ def count_document_points(collection_name, document_id):
     return client.count(
         collection_name=collection_name, count_filter=document_filter(document_id), exact=True
     ).count
+
+
+def access_filter(folders, documents, denied_documents):
+    """Build the Qdrant filter that expresses what an agent may see.
+
+    Takes the folder ids an agent may search, the documents allowed in their
+    own right and the documents denied in their own right. The two allow lists
+    are combined as a nested alternative rather than as loose optional clauses,
+    so the meaning is unambiguous: the chunk must be active, must belong either
+    to a permitted folder or to a permitted document, and must not belong to a
+    denied one. Returns the filter.
+
+    Raises ValueError when nothing at all is allowed. A filter built from two
+    empty lists would carry no restriction and match every active chunk in the
+    collection, so the one input that must never produce a filter is the one
+    that describes an agent permitted nothing.
+    """
+    if not folders and not documents:
+        raise ValueError(
+            "Refusing to build an access filter with nothing allowed: an empty scope "
+            "must be answered without searching, never by searching without limits"
+        )
+    alternatives = []
+    if folders:
+        alternatives.append(
+            qmodels.FieldCondition(
+                key="folder_id", match=qmodels.MatchAny(any=[str(value) for value in folders])
+            )
+        )
+    if documents:
+        alternatives.append(
+            qmodels.FieldCondition(
+                key="document_id", match=qmodels.MatchAny(any=[str(value) for value in documents])
+            )
+        )
+    must = [
+        qmodels.FieldCondition(key="is_agent_active", match=qmodels.MatchValue(value=True)),
+        qmodels.Filter(should=alternatives),
+    ]
+    must_not = []
+    if denied_documents:
+        must_not.append(
+            qmodels.FieldCondition(
+                key="document_id",
+                match=qmodels.MatchAny(any=[str(value) for value in denied_documents]),
+            )
+        )
+    return qmodels.Filter(must=must, must_not=must_not)
+
+
+def search(collection_name, vector, query_filter, limit):
+    """Return the closest chunks of one collection that pass a filter.
+
+    Takes the collection name, the query vector, the filter and how many hits
+    to return. Returns a list of (payload, score) pairs, closest first, or
+    nothing when the collection has never been written to.
+    """
+    client = get_client()
+    if not client.collection_exists(collection_name):
+        return []
+    hits = client.query_points(
+        collection_name=collection_name,
+        query=vector,
+        query_filter=query_filter,
+        limit=limit,
+        with_payload=True,
+    ).points
+    return [(hit.payload, hit.score) for hit in hits]

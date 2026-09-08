@@ -116,12 +116,18 @@ Set `PUBLIC_HOST` in `.env` to the hostname the browser will use:
 
 ```
 PUBLIC_HOST=rag.example.com
+TRUSTED_PROXY_COUNT=1
 ```
 
-That single value adds the host to Django's `ALLOWED_HOSTS`, trusts
+`PUBLIC_HOST` adds the host to Django's `ALLOWED_HOSTS`, trusts
 `https://<host>` for CSRF, honours the `X-Forwarded-Proto` header, and tells
 the Vite dev server to accept the host and to open its hot reload socket
 through the proxy.
+
+`TRUSTED_PROXY_COUNT` must match how many proxies you put in front — one for
+the virtual host below. Left at its default of `0`, rate limiting counts the
+proxy's own address instead of the caller's, so every caller shares one
+allowance and any of them can exhaust the login limit for everyone.
 
 An nginx virtual host that serves the panel and the API from the same origin:
 
@@ -165,6 +171,17 @@ It answers `200` when every service is reachable and `503` as soon as one is
 not, naming the one that failed. The reason a probe failed is added only for a
 signed in owner, since driver errors quote hosts, users and endpoints. The web
 panel renders the same report on its front page.
+
+## Tests
+
+```sh
+docker compose exec backend python manage.py test apps
+```
+
+The suite covers the permission resolver and the pieces that turn a resolved
+permission into an answer, which is where a mistake would hand an agent a
+document it was never granted. It touches only PostgreSQL, so it runs in under
+a second and needs no vector store, object store or embedding model.
 
 ## Project layout
 

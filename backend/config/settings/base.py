@@ -134,7 +134,10 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_THROTTLE_RATES": {"login": "10/min"},
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/min",
+        "search": env("SEARCH_THROTTLE_RATE", "60/min"),
+    },
     "NUM_PROXIES": env_int("TRUSTED_PROXY_COUNT", 1 if PUBLIC_HOST else 0),
 }
 

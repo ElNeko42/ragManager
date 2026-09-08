@@ -6,5 +6,6 @@ urlpatterns = [
     path("auth/", include("apps.accounts.urls")),
     path("agents/", include("apps.agents.urls")),
     path("permissions/", include("apps.access.urls")),
+    path("search/", include("apps.search.urls")),
     path("", include("apps.drive.urls")),
 ]

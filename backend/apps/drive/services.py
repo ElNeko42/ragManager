@@ -198,12 +198,16 @@ def update_document(document, changes):
     folder using a different embedding model drops them and queues a fresh run,
     because vectors of different models are not interchangeable. Switching the
     flag off never deletes anything and switching it back on never reprocesses
-    a document that is already indexed. Returns the updated document.
+    a document that is already indexed.
+
+    An indexed document has its whole desired state pushed on every update
+    rather than only the field that changed. Writing the difference meant that
+    a push lost to an unreachable vector store could never be repeated: the row
+    already held the new value, so the next attempt saw nothing to do and the
+    stale payload stayed forever. Returns the updated document.
     """
     previous_collection = document.folder.collection
     was_active = document.is_agent_active
-    was_ready = document.processing_status == ProcessingStatus.READY
-    previous_folder_id = document.folder_id
     for field, value in changes.items():
         setattr(document, field, value)
     document.save()
@@ -219,15 +223,15 @@ def update_document(document, changes):
             ingestion.enqueue(document)
         return document
 
-    if document.folder_id != previous_folder_id and was_ready:
+    if document.processing_status == ProcessingStatus.READY:
         ingestion.apply_payload(
-            collection.name, document.pk, {"folder_id": str(document.folder_id)}
+            collection.name,
+            document.pk,
+            {
+                "folder_id": str(document.folder_id),
+                "is_agent_active": document.is_agent_active,
+            },
         )
-    if document.is_agent_active and not was_active:
-        if was_ready:
-            ingestion.apply_payload(collection.name, document.pk, {"is_agent_active": True})
-        else:
-            ingestion.enqueue(document)
-    elif was_active and not document.is_agent_active and was_ready:
-        ingestion.apply_payload(collection.name, document.pk, {"is_agent_active": False})
+    elif document.is_agent_active and not was_active:
+        ingestion.enqueue(document)
     return document
