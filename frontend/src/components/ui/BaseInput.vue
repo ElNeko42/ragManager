@@ -26,12 +26,18 @@ const model = defineModel<string>({ required: true })
 
 <style scoped>
 input {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small);
-  background: var(--surface);
-  color: var(--text);
   width: 100%;
+  padding: 11px 13px;
+  border: var(--rm-border-width) solid var(--rm-border);
+  border-radius: 10px;
+  background: var(--rm-panel2);
+  color: var(--rm-ink);
+}
+
+input:focus {
+  outline: none;
+  background: var(--rm-panel);
+  box-shadow: 3px 3px 0 var(--rm-shadow);
 }
 
 input:disabled {

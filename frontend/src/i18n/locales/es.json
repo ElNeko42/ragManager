@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "ragManager",
-    "tagline": "Almacén de documentos autoalojado para agentes de IA"
+    "tagline": "ALMACÉN RAG AUTOALOJADO"
   },
   "nav": {
     "drive": "Documentos",
@@ -19,7 +19,8 @@
     "submitting": "Entrando…",
     "invalid": "Esas credenciales no son válidas.",
     "throttled": "Demasiados intentos. Espera un momento y vuelve a probar.",
-    "unreachable": "El servidor no ha respondido. Comprueba que está en marcha."
+    "unreachable": "El servidor no ha respondido. Comprueba que está en marcha.",
+    "hint": "Los agentes no entran por aquí: usan su token."
   },
   "status": {
     "title": "Estado",
@@ -41,5 +42,9 @@
     "retry": "Reintentar",
     "language": "Idioma",
     "unexpectedError": "Algo ha ido mal."
+  },
+  "theme": {
+    "toDark": "MODO NOCHE",
+    "toLight": "MODO DÍA"
   }
 }

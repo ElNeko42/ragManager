@@ -13,31 +13,37 @@ withDefaults(defineProps<{ tone?: 'neutral' | 'positive' | 'negative' | 'warning
 <style scoped>
 .badge {
   display: inline-block;
-  padding: 1px var(--space-2);
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 0.82em;
-  font-weight: 600;
+  font-family: var(--rm-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .neutral {
-  background: var(--surface-sunken);
-  color: var(--text-muted);
-  border: 1px solid var(--border);
+  border: var(--rm-border-width) solid var(--rm-line);
+  background: var(--rm-panel2);
+  color: var(--rm-muted);
 }
 
 .positive {
-  background: var(--positive-soft);
-  color: var(--positive);
+  border: var(--rm-border-width) solid var(--rm-border);
+  background: var(--rm-pos-soft);
+  color: var(--rm-pos);
 }
 
 .negative {
-  background: var(--negative-soft);
-  color: var(--negative);
+  border: var(--rm-border-width) solid var(--rm-border);
+  background: var(--rm-neg-soft);
+  color: var(--rm-neg);
 }
 
 .warning {
-  background: var(--warning-soft);
-  color: var(--warning);
+  border: var(--rm-border-width) solid var(--rm-border);
+  background: var(--rm-warn-soft);
+  color: var(--rm-warn);
 }
 </style>

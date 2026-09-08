@@ -1,12 +1,24 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 
+import '@fontsource/chakra-petch/500.css'
+import '@fontsource/chakra-petch/700.css'
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/700.css'
+import '@fontsource/space-grotesk/400.css'
+import '@fontsource/space-grotesk/500.css'
+import '@fontsource/space-grotesk/700.css'
+
 import App from './App.vue'
 import { i18n, persistLocale, resolveInitialLocale } from './i18n'
 import { router } from './router'
+import { useThemeStore } from './stores/theme'
 import './styles/tokens.css'
 import './styles/base.css'
 
 persistLocale(resolveInitialLocale())
 
-createApp(App).use(createPinia()).use(i18n).use(router).mount('#app')
+const app = createApp(App)
+app.use(createPinia())
+useThemeStore().apply()
+app.use(i18n).use(router).mount('#app')

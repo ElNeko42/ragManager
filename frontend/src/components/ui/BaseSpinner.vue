@@ -13,29 +13,21 @@ defineProps<{ label: string }>()
 .spinner {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--rm-space-2);
   margin: 0;
-  color: var(--text-muted);
+  font-family: var(--rm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rm-muted);
 }
 
 .dot {
   width: 10px;
   height: 10px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
+  border: 2px solid var(--rm-line);
+  border-top-color: var(--rm-pink);
   border-radius: 50%;
-  animation: spin 700ms linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dot {
-    animation: none;
-  }
+  animation: rm-spin 700ms linear infinite;
 }
 </style>

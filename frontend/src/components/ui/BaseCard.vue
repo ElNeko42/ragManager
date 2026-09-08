@@ -21,28 +21,33 @@ defineProps<{ title?: string; subtitle?: string }>()
 .card {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5);
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  gap: var(--rm-space-4);
+  padding: var(--rm-space-5);
+  background: var(--rm-panel);
+  border: var(--rm-border-width) solid var(--rm-border);
+  border-radius: var(--rm-radius);
+  box-shadow: var(--rm-lift) var(--rm-lift) 0 var(--rm-shadow);
 }
 
 .head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--rm-space-4);
+  flex-wrap: wrap;
+}
+
+h2 {
+  font-size: 22px;
 }
 
 .subtitle {
-  margin: var(--space-1) 0 0;
-  color: var(--text-muted);
+  margin: var(--rm-space-1) 0 0;
+  color: var(--rm-muted);
 }
 
 .actions {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--rm-space-2);
 }
 </style>

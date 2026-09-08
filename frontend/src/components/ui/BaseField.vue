@@ -14,17 +14,21 @@ defineProps<{ label: string; forId: string; hint?: string }>()
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: 6px;
 }
 
 label {
-  font-weight: 500;
-  color: var(--text-muted);
+  font-family: var(--rm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rm-muted);
 }
 
 .hint {
   margin: 0;
-  font-size: 0.85em;
-  color: var(--text-muted);
+  font-family: var(--rm-font-mono);
+  font-size: 11px;
+  color: var(--rm-muted);
 }
 </style>

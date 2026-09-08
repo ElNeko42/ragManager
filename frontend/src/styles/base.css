@@ -12,11 +12,13 @@ body,
 
 body {
   margin: 0;
-  font-family: var(--font);
+  font-family: var(--rm-font);
   font-size: 14px;
   line-height: 1.5;
-  color: var(--text);
-  background: var(--surface-sunken);
+  color: var(--rm-ink);
+  background-color: var(--rm-bg);
+  background-image: radial-gradient(var(--rm-dot) 1.4px, transparent 1.4px);
+  background-size: 18px 18px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -24,8 +26,10 @@ h1,
 h2,
 h3 {
   margin: 0;
-  font-weight: 600;
-  line-height: 1.25;
+  font-family: var(--rm-font-display);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -36,10 +40,36 @@ select {
 }
 
 a {
-  color: var(--accent);
+  color: var(--rm-accent);
+}
+
+a:hover {
+  color: var(--rm-pink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 3px solid var(--rm-pink);
   outline-offset: 2px;
+}
+
+@keyframes rm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes rm-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

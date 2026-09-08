@@ -5,10 +5,11 @@ import { useRoute, useRouter } from 'vue-router'
 
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
-import BaseCard from '../components/ui/BaseCard.vue'
 import BaseField from '../components/ui/BaseField.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import BaseWindow from '../components/ui/BaseWindow.vue'
 import LanguageSwitcher from '../components/layout/LanguageSwitcher.vue'
+import ThemeToggle from '../components/layout/ThemeToggle.vue'
 import { ApiError } from '../api/client'
 import { useSessionStore } from '../stores/session'
 
@@ -64,9 +65,16 @@ function describe(cause: unknown): string {
   <div class="page">
     <div class="corner">
       <LanguageSwitcher />
+      <ThemeToggle />
     </div>
-    <BaseCard :title="t('login.title')" :subtitle="t('login.subtitle')" class="panel">
+
+    <BaseWindow title="RAGMANAGER.EXE" class="panel">
       <form class="form" @submit.prevent="submit">
+        <div>
+          <h1>{{ t('login.title') }}</h1>
+          <p class="subtitle">{{ t('login.subtitle') }}</p>
+        </div>
+
         <BaseField :label="t('login.email')" for-id="email">
           <BaseInput
             id="email"
@@ -77,6 +85,7 @@ function describe(cause: unknown): string {
             :disabled="submitting"
           />
         </BaseField>
+
         <BaseField :label="t('login.password')" for-id="password">
           <BaseInput
             id="password"
@@ -87,12 +96,16 @@ function describe(cause: unknown): string {
             :disabled="submitting"
           />
         </BaseField>
+
         <BaseAlert v-if="error" tone="negative">{{ error }}</BaseAlert>
+
         <BaseButton type="submit" variant="primary" block :disabled="submitting">
           {{ submitting ? t('login.submitting') : t('login.submit') }}
         </BaseButton>
+
+        <p class="hint">{{ t('login.hint') }}</p>
       </form>
-    </BaseCard>
+    </BaseWindow>
   </div>
 </template>
 
@@ -102,23 +115,42 @@ function describe(cause: unknown): string {
   align-items: center;
   justify-content: center;
   min-height: 100%;
-  padding: var(--space-5);
+  padding: var(--rm-space-5);
 }
 
 .corner {
   position: fixed;
-  top: var(--space-4);
-  right: var(--space-4);
+  top: var(--rm-space-4);
+  right: var(--rm-space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--rm-space-2);
 }
 
 .panel {
   width: 100%;
-  max-width: 380px;
+  max-width: 420px;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 18px;
+}
+
+h1 {
+  font-size: 30px;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: var(--rm-muted);
+}
+
+.hint {
+  margin: 0;
+  font-family: var(--rm-font-mono);
+  font-size: 11px;
+  color: var(--rm-muted);
 }
 </style>

@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "ragManager",
-    "tagline": "Self-hosted document storage for AI agents"
+    "tagline": "SELF-HOSTED RAG STORAGE"
   },
   "nav": {
     "drive": "Drive",
@@ -19,7 +19,8 @@
     "submitting": "Signing in…",
     "invalid": "Those credentials are not valid.",
     "throttled": "Too many attempts. Wait a moment and try again.",
-    "unreachable": "The server did not answer. Check that it is running."
+    "unreachable": "The server did not answer. Check that it is running.",
+    "hint": "Agents do not sign in here: they carry a token."
   },
   "status": {
     "title": "Status",
@@ -41,5 +42,9 @@
     "retry": "Try again",
     "language": "Language",
     "unexpectedError": "Something went wrong."
+  },
+  "theme": {
+    "toDark": "NIGHT MODE",
+    "toLight": "DAY MODE"
   }
 }

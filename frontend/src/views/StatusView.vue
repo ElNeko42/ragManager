@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import AppShell from '../components/layout/AppShell.vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseBadge from '../components/ui/BaseBadge.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
-import BaseCard from '../components/ui/BaseCard.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import { readHealth } from '../api/health'
 import type { HealthReport } from '../api/health'
@@ -16,6 +15,15 @@ const { t, te } = useI18n()
 const report = ref<HealthReport | null>(null)
 const loading = ref(false)
 const failed = ref(false)
+
+const services = computed(() =>
+  Object.entries(report.value?.services ?? {}).map(([key, service]) => ({
+    key,
+    name: serviceName(key),
+    healthy: service.healthy,
+    detail: service.detail ?? ''
+  }))
+)
 
 /**
  * Reads the health report and keeps it for rendering.
@@ -49,71 +57,109 @@ onMounted(load)
 
 <template>
   <AppShell>
-    <BaseCard :title="t('status.title')" :subtitle="t('status.subtitle')">
-      <template #actions>
+    <div class="page">
+      <header class="head">
+        <div>
+          <h2>{{ t('status.title') }}</h2>
+          <p class="subtitle">{{ t('status.subtitle') }}</p>
+        </div>
         <BaseButton :disabled="loading" @click="load">{{ t('status.refresh') }}</BaseButton>
-      </template>
+      </header>
 
       <BaseSpinner v-if="loading && !report" :label="t('common.loading')" />
       <BaseAlert v-else-if="failed" tone="negative">{{ t('common.unexpectedError') }}</BaseAlert>
+
       <template v-else-if="report">
         <BaseAlert :tone="report.healthy ? 'positive' : 'negative'">
           {{ report.healthy ? t('status.allHealthy') : t('status.someUnhealthy') }}
         </BaseAlert>
-        <ul class="services">
-          <li v-for="(service, key) in report.services" :key="key">
-            <span class="name">{{ serviceName(String(key)) }}</span>
-            <BaseBadge :tone="service.healthy ? 'positive' : 'negative'">
-              {{ service.healthy ? t('status.healthy') : t('status.unhealthy') }}
-            </BaseBadge>
-            <span v-if="service.detail" class="detail">{{ service.detail }}</span>
-          </li>
-        </ul>
+
+        <div class="grid">
+          <article v-for="service in services" :key="service.key" class="service">
+            <span class="key">{{ service.key }}</span>
+            <strong class="name">{{ service.name }}</strong>
+            <div class="state">
+              <BaseBadge :tone="service.healthy ? 'positive' : 'negative'">
+                {{ service.healthy ? t('status.healthy') : t('status.unhealthy') }}
+              </BaseBadge>
+            </div>
+            <p v-if="service.detail" class="detail">{{ service.detail }}</p>
+          </article>
+        </div>
       </template>
-    </BaseCard>
+    </div>
   </AppShell>
 </template>
 
 <style scoped>
-.services {
+.page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: var(--rm-space-4);
 }
 
-li {
+.head {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--rm-space-3);
+  flex-wrap: wrap;
+}
+
+.head div {
+  margin-right: auto;
+}
+
+h2 {
+  font-size: 26px;
+}
+
+.subtitle {
+  margin: 3px 0 0;
+  color: var(--rm-muted);
+  font-size: 13px;
+}
+
+.grid {
   display: grid;
-  grid-template-columns: 200px auto 1fr;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--rm-space-4);
 }
 
-li:last-child {
-  border-bottom: none;
+.service {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-space-3);
+  padding: var(--rm-space-4);
+  background: var(--rm-panel);
+  border: var(--rm-border-width) solid var(--rm-border);
+  border-radius: var(--rm-radius);
+  box-shadow: var(--rm-lift) var(--rm-lift) 0 var(--rm-shadow);
+}
+
+.key {
+  font-family: var(--rm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rm-muted);
 }
 
 .name {
-  font-weight: 500;
+  font-family: var(--rm-font-display);
+  font-size: 18px;
+}
+
+.state {
+  display: flex;
+  align-items: center;
+  gap: var(--rm-space-2);
 }
 
 .detail {
-  color: var(--text-muted);
-  font-size: 0.9em;
-  word-break: break-word;
-}
-
-@media (max-width: 720px) {
-  li {
-    grid-template-columns: 1fr auto;
-  }
-
-  .detail {
-    grid-column: 1 / -1;
-  }
+  margin: 0;
+  font-family: var(--rm-font-mono);
+  font-size: 11px;
+  color: var(--rm-muted);
+  overflow-wrap: anywhere;
 }
 </style>
