@@ -32,6 +32,10 @@ async function leave(): Promise<void> {
       </div>
 
       <nav class="links">
+        <RouterLink :to="{ name: 'drive' }">{{ t('nav.drive') }}</RouterLink>
+        <RouterLink :to="{ name: 'agents' }">{{ t('nav.agents') }}</RouterLink>
+        <RouterLink :to="{ name: 'permissions' }">{{ t('nav.permissions') }}</RouterLink>
+        <RouterLink :to="{ name: 'collections' }">{{ t('nav.collections') }}</RouterLink>
         <RouterLink :to="{ name: 'status' }">{{ t('nav.status') }}</RouterLink>
       </nav>
 

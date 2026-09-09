@@ -1,0 +1,191 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+
+import AppShell from '../components/layout/AppShell.vue'
+import BaseAlert from '../components/ui/BaseAlert.vue'
+import BaseButton from '../components/ui/BaseButton.vue'
+import BaseField from '../components/ui/BaseField.vue'
+import BaseInput from '../components/ui/BaseInput.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
+import BaseSpinner from '../components/ui/BaseSpinner.vue'
+import AgentCard from '../components/agents/AgentCard.vue'
+import TokenReveal from '../components/agents/TokenReveal.vue'
+import { useAgentsStore } from '../stores/agents'
+
+const { t } = useI18n()
+const router = useRouter()
+const agents = useAgentsStore()
+
+const creating = ref(false)
+const name = ref('')
+const expiry = ref('')
+const busy = ref(false)
+const failure = ref('')
+
+const reveal = ref<{ token: string; agentName: string } | null>(null)
+
+/**
+ * Runs one panel action, showing why it failed instead of failing silently.
+ */
+async function run(action: () => Promise<unknown>): Promise<void> {
+  busy.value = true
+  failure.value = ''
+  try {
+    await action()
+  } catch {
+    failure.value = t('common.unexpectedError')
+  } finally {
+    busy.value = false
+  }
+}
+
+/**
+ * Turns the date the owner typed into what the API expects, or nothing.
+ */
+function expiresAt(): string | null {
+  return expiry.value ? new Date(`${expiry.value}T23:59:59`).toISOString() : null
+}
+
+/**
+ * Registers the agent and puts its token in front of the owner.
+ */
+function submit(): void {
+  const wanted = name.value.trim()
+  if (!wanted) {
+    return
+  }
+  void run(async () => {
+    const created = await agents.create(wanted, expiresAt())
+    creating.value = false
+    name.value = ''
+    expiry.value = ''
+    reveal.value = { token: created.token, agentName: created.agent.name }
+  })
+}
+
+/**
+ * Mints an extra token for an agent that already exists.
+ */
+function issue(agentId: string, agentName: string): void {
+  void run(async () => {
+    const issued = await agents.issue(agentId, null)
+    reveal.value = { token: issued.token, agentName }
+  })
+}
+
+onMounted(() => void run(() => agents.load()))
+</script>
+
+<template>
+  <AppShell>
+    <div class="page">
+      <header class="head">
+        <div>
+          <h2>{{ t('agents.title') }}</h2>
+          <p class="subtitle">{{ t('agents.subtitle') }}</p>
+        </div>
+        <BaseButton variant="primary" @click="creating = true">{{ t('agents.newAgent') }}</BaseButton>
+      </header>
+
+      <BaseAlert v-if="failure" tone="negative">{{ failure }}</BaseAlert>
+      <BaseSpinner v-if="agents.loading || busy" :label="t('common.loading')" />
+
+      <p v-if="!agents.rows.length && !agents.loading" class="empty">{{ t('agents.none') }}</p>
+
+      <div v-else class="grid">
+        <AgentCard
+          v-for="row in agents.rows"
+          :key="row.agent.agent_id"
+          :row="row"
+          @issue="issue(row.agent.agent_id, row.agent.name)"
+          @revoke="(tokenId) => run(() => agents.revoke(row.agent.agent_id, tokenId))"
+          @remove="run(() => agents.remove(row.agent.agent_id))"
+          @simulate="router.push({ name: 'permissions', query: { agent: row.agent.agent_id } })"
+        />
+      </div>
+    </div>
+
+    <BaseModal v-if="creating" :title="t('agents.newAgentTitle')" @close="creating = false">
+      <form class="form" @submit.prevent="submit">
+        <BaseField :label="t('agents.name')" for-id="agent-name">
+          <BaseInput id="agent-name" v-model="name" required :disabled="busy" />
+        </BaseField>
+        <BaseField
+          :label="t('agents.expiry')"
+          for-id="agent-expiry"
+          :hint="t('agents.expiryHint')"
+        >
+          <BaseInput id="agent-expiry" v-model="expiry" type="date" :disabled="busy" />
+        </BaseField>
+        <BaseButton type="submit" variant="primary" block :disabled="busy">
+          {{ t('agents.createGo') }}
+        </BaseButton>
+      </form>
+    </BaseModal>
+
+    <BaseModal
+      v-if="reveal"
+      :title="t('agents.tokenTitle')"
+      :dismissible="false"
+      @close="reveal = null"
+    >
+      <TokenReveal
+        :token="reveal.token"
+        :agent-name="reveal.agentName"
+        @done="reveal = null"
+      />
+    </BaseModal>
+  </AppShell>
+</template>
+
+<style scoped>
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-space-4);
+}
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--rm-space-3);
+  flex-wrap: wrap;
+}
+
+.head div {
+  margin-right: auto;
+}
+
+h2 {
+  font-size: 26px;
+}
+
+.subtitle {
+  margin: 3px 0 0;
+  color: var(--rm-muted);
+  font-size: 13px;
+  max-width: 70ch;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--rm-space-4);
+}
+
+.empty {
+  margin: 0;
+  padding: var(--rm-space-4);
+  border: var(--rm-border-width) dashed var(--rm-border);
+  border-radius: 14px;
+  color: var(--rm-muted);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-space-4);
+}
+</style>

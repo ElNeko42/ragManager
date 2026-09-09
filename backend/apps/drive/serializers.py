@@ -129,6 +129,27 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class DocumentDetailSerializer(DocumentSerializer):
+    last_error = serializers.SerializerMethodField()
+
+    class Meta(DocumentSerializer.Meta):
+        fields = DocumentSerializer.Meta.fields + ("last_error",)
+        read_only_fields = fields
+
+    def get_last_error(self, document):
+        """Return why the most recent processing run failed, if it did.
+
+        A failed status on its own tells the owner that something broke but
+        not what, which leaves nothing to act on. The reason is read here
+        rather than in the listing because it costs one query per document,
+        and a folder of a hundred files should not pay for it.
+        """
+        from apps.ingestion.models import ProcessingJob
+
+        job = ProcessingJob.objects.filter(document=document).order_by("-created_at").first()
+        return job.error_message if job else None
+
+
 class DocumentUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255, required=False)
     folder = serializers.PrimaryKeyRelatedField(queryset=Folder.objects.all(), required=False)

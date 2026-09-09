@@ -11,10 +11,12 @@ people.
 
 ## Status
 
-Under construction. The management API, authentication and the ingestion
-pipeline work; the MCP server and the permission resolver do not exist yet, so
-no agent can query documents at the moment. The web panel currently renders
-only the health report.
+Under construction. The management API, authentication, the ingestion
+pipeline, the permission resolver and the search endpoint work, and the web
+panel covers documents, agents and tokens, permissions and collections.
+
+The MCP server does not exist yet, so an agent cannot reach any of this
+through MCP: it can only call the search endpoint directly with its token.
 
 ## Stack
 

@@ -16,6 +16,7 @@ from apps.drive.serializers import (
     CollectionCreateSerializer,
     CollectionSerializer,
     CollectionUpdateSerializer,
+    DocumentDetailSerializer,
     DocumentSerializer,
     DocumentUpdateSerializer,
     FolderCreateSerializer,
@@ -202,8 +203,9 @@ class DocumentDetailView(APIView):
     permission_classes = [IsOwner]
 
     def get(self, request, document_id):
-        """Return one document."""
-        return Response(DocumentSerializer(get_object_or_404(Document, pk=document_id)).data)
+        """Return one document, with the reason its last run failed."""
+        document = get_object_or_404(Document, pk=document_id)
+        return Response(DocumentDetailSerializer(document).data)
 
     def patch(self, request, document_id):
         """Rename a document, move it, or switch its agent flag.

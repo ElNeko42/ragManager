@@ -11,12 +11,32 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true }
   },
   {
+    path: '/drive',
+    name: 'drive',
+    component: () => import('../views/DriveView.vue')
+  },
+  {
+    path: '/agents',
+    name: 'agents',
+    component: () => import('../views/AgentsView.vue')
+  },
+  {
+    path: '/permissions',
+    name: 'permissions',
+    component: () => import('../views/PermissionsView.vue')
+  },
+  {
+    path: '/collections',
+    name: 'collections',
+    component: () => import('../views/CollectionsView.vue')
+  },
+  {
     path: '/status',
     name: 'status',
     component: () => import('../views/StatusView.vue')
   },
-  { path: '/', redirect: { name: 'status' } },
-  { path: '/:pathMatch(.*)*', redirect: { name: 'status' } }
+  { path: '/', redirect: { name: 'drive' } },
+  { path: '/:pathMatch(.*)*', redirect: { name: 'drive' } }
 ]
 
 export const router = createRouter({ history: createWebHistory(), routes })
@@ -28,7 +48,7 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: { next: to.fullPath } }
   }
   if (to.meta.public && session.owner) {
-    return { name: 'status' }
+    return { name: 'drive' }
   }
   return true
 })
