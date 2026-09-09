@@ -6,16 +6,23 @@ import BaseAlert from '../ui/BaseAlert.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import BaseInput from '../ui/BaseInput.vue'
 import BaseSwitch from '../ui/BaseSwitch.vue'
+import ConfirmDialog from '../ui/ConfirmDialog.vue'
 import StatusBadge from './StatusBadge.vue'
 import { contentUrl } from '../../api/drive'
 import { formatBytes, formatDate } from '../../api/format'
 import { progressOf } from '../../stores/drive'
 import type { DocumentDetail } from '../../api/drive'
 
-const props = defineProps<{ document: DocumentDetail; path: string; collection: string }>()
+const props = defineProps<{
+  document: DocumentDetail
+  path: string
+  collection: string
+  destinations: { id: string; label: string }[]
+}>()
 const emit = defineEmits<{
   active: [value: boolean]
   rename: [name: string]
+  move: [folderId: string]
   remove: []
 }>()
 
@@ -24,12 +31,14 @@ const { t } = useI18n()
 const renaming = ref(false)
 const draft = ref(props.document.name)
 const confirming = ref(false)
+const destination = ref('')
 
 watch(
   () => props.document.document_id,
   () => {
     renaming.value = false
     confirming.value = false
+    destination.value = ''
     draft.value = props.document.name
   }
 )
@@ -50,6 +59,21 @@ const facts = computed(() => [
   { key: t('drive.fact.uploaded'), value: formatDate(props.document.created_at) },
   { key: t('drive.fact.updated'), value: formatDate(props.document.updated_at) }
 ])
+
+/**
+ * Hands the chosen destination up and puts the picker back to neutral.
+ *
+ * The picker is reset rather than left showing the destination, because the
+ * move may be refused or may need confirming, and a picker that already reads
+ * as done would be claiming something that has not happened.
+ */
+function commitMove(): void {
+  const folderId = destination.value
+  destination.value = ''
+  if (folderId) {
+    emit('move', folderId)
+  }
+}
 
 /**
  * Applies the new name, unless it was left unchanged or empty.
@@ -110,6 +134,16 @@ function commitRename(): void {
       </div>
     </dl>
 
+    <div v-if="destinations.length" class="moving">
+      <label class="eyebrow" for="move-to">{{ t('drive.moveTo') }}</label>
+      <select id="move-to" v-model="destination" class="picker" @change="commitMove">
+        <option value="">{{ t('drive.movePick') }}</option>
+        <option v-for="folder in destinations" :key="folder.id" :value="folder.id">
+          {{ folder.label }}
+        </option>
+      </select>
+    </div>
+
     <div class="actions">
       <a class="download" :href="contentUrl(document.document_id)" download>
         {{ t('drive.download') }}
@@ -118,19 +152,43 @@ function commitRename(): void {
     </div>
 
     <div class="danger">
-      <BaseButton v-if="!confirming" variant="quiet" @click="confirming = true">
-        {{ t('drive.delete') }}
-      </BaseButton>
-      <template v-else>
-        <span class="ask">{{ t('drive.deleteAsk') }}</span>
-        <button type="button" class="yes" @click="emit('remove')">{{ t('drive.deleteYes') }}</button>
-        <BaseButton variant="quiet" @click="confirming = false">{{ t('drive.cancel') }}</BaseButton>
-      </template>
+      <BaseButton variant="quiet" @click="confirming = true">{{ t('drive.delete') }}</BaseButton>
     </div>
+
+    <ConfirmDialog
+      v-if="confirming"
+      :title="t('drive.delete')"
+      :question="t('drive.deleteAsk', { name: document.name })"
+      :consequences="[
+        t('drive.deleteCost.file'),
+        t('drive.deleteCost.chunks', { count: document.chunk_count })
+      ]"
+      :confirm-label="t('drive.deleteYes')"
+      @confirm="confirming = false; emit('remove')"
+      @cancel="confirming = false"
+    />
   </aside>
 </template>
 
 <style scoped>
+.moving {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.picker {
+  width: 100%;
+  padding: 9px var(--rm-space-3);
+  border: var(--rm-border-width) solid var(--rm-border);
+  border-radius: 10px;
+  background: var(--rm-panel);
+  color: var(--rm-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .detail {
   display: flex;
   flex-direction: column;
@@ -280,19 +338,5 @@ dd {
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
 
-.ask {
-  font-size: 12.5px;
-  color: var(--rm-neg);
-}
 
-.yes {
-  padding: 7px 12px;
-  border: var(--rm-border-width) solid var(--rm-border);
-  border-radius: 999px;
-  background: var(--rm-neg-soft);
-  color: var(--rm-neg);
-  font-weight: 700;
-  font-size: 12.5px;
-  cursor: pointer;
-}
 </style>

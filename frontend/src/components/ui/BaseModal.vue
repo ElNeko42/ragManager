@@ -2,31 +2,75 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-defineProps<{ title: string; dismissible?: boolean }>()
+const props = defineProps<{ title: string; dismissible?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const { t } = useI18n()
 const panel = ref<HTMLElement | null>(null)
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 /**
- * Closes the dialog when the visitor presses escape.
+ * Reports whether the visitor is allowed to walk away from this dialog.
+ *
+ * A dialog that shows something the server will never show again, such as a
+ * freshly issued token, opts out: losing it to a stray keystroke means issuing
+ * a new one.
+ */
+function canDismiss(): boolean {
+  return props.dismissible !== false
+}
+
+/**
+ * Handles escape to leave and tab to stay inside the dialog.
  */
 function onKey(event: KeyboardEvent): void {
-  if (event.key === 'Escape') {
+  if (event.key === 'Escape' && canDismiss()) {
     emit('close')
+    return
+  }
+  if (event.key !== 'Tab' || !panel.value) {
+    return
+  }
+  const stops = Array.from(panel.value.querySelectorAll<HTMLElement>(FOCUSABLE))
+  if (stops.length === 0) {
+    event.preventDefault()
+    panel.value.focus()
+    return
+  }
+  const first = stops[0]
+  const last = stops[stops.length - 1]
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || active === panel.value)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault()
+    first.focus()
   }
 }
 
+let restoreOverflow = ''
+let opener: HTMLElement | null = null
+
 onMounted(() => {
+  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  restoreOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
   window.addEventListener('keydown', onKey)
   panel.value?.focus()
 })
 
-onUnmounted(() => window.removeEventListener('keydown', onKey))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKey)
+  document.body.style.overflow = restoreOverflow
+  opener?.focus()
+})
 </script>
 
 <template>
-  <div class="backdrop" @click.self="dismissible !== false && emit('close')">
+  <div class="backdrop" @click.self="canDismiss() && emit('close')">
     <section
       ref="panel"
       class="panel"
@@ -40,7 +84,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKey))
         <span class="dot amber" aria-hidden="true" />
         <span class="dot lime" aria-hidden="true" />
         <span class="name">{{ title }}</span>
-        <button type="button" class="close" :aria-label="t('common.close')" @click="emit('close')">
+        <button
+          v-if="canDismiss()"
+          type="button"
+          class="close"
+          :aria-label="t('common.close')"
+          @click="emit('close')"
+        >
           ×
         </button>
       </header>

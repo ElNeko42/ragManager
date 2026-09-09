@@ -36,11 +36,18 @@ export const useAccessStore = defineStore('access', () => {
 
   /**
    * Loads the agents and opens the one asked for, or the first there is.
+   *
+   * A folder can be asked for as well, because the owner often arrives here
+   * from a folder in the drive wanting to decide that one folder, and having
+   * to find it again in the tree is work the link can do.
    */
-  async function load(preferred?: string | null): Promise<void> {
+  async function load(preferred?: string | null, folder?: string | null): Promise<void> {
     loading.value = true
     try {
       agents.value = await listAgents()
+      if (folder) {
+        folderId.value = folder
+      }
       const wanted = preferred ?? agentId.value ?? agents.value[0]?.agent_id ?? null
       await pick(wanted)
     } finally {

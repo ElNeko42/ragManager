@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from apps.drive.models import Collection, Document, EmbeddingProvider, Folder
 from apps.drive.services import is_within
+from apps.ingestion.models import ProcessingJob
 
 
 class CollectionSerializer(serializers.ModelSerializer):
@@ -144,9 +145,7 @@ class DocumentDetailSerializer(DocumentSerializer):
         rather than in the listing because it costs one query per document,
         and a folder of a hundred files should not pay for it.
         """
-        from apps.ingestion.models import ProcessingJob
-
-        job = ProcessingJob.objects.filter(document=document).order_by("-created_at").first()
+        job = ProcessingJob.objects.filter(document=document).first()
         return job.error_message if job else None
 
 

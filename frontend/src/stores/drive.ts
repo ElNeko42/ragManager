@@ -29,9 +29,9 @@ export const useDriveStore = defineStore('drive', () => {
   const selected = ref<DocumentDetail | null>(null)
   const folderId = ref<string | null>(null)
   const loading = ref(false)
-  const error = ref('')
 
   let timer: number | undefined
+  let polling = false
 
   const current = computed(() => folders.value.find((f) => f.folder_id === folderId.value) ?? null)
   const root = computed(() => folders.value.find((f) => f.is_root) ?? null)
@@ -61,16 +61,19 @@ export const useDriveStore = defineStore('drive', () => {
 
   /**
    * Loads the tree and the collections, then opens a folder.
+   *
+   * A failure is left to travel up to the caller: swallowing it here painted an
+   * empty panel that claimed the folder was empty, which is a different thing
+   * from not knowing what the folder holds.
    */
   async function start(): Promise<void> {
     loading.value = true
+    polling = true
     try {
       const [tree, cols] = await Promise.all([api.listFolders(), api.listCollections()])
       folders.value = tree
       collections.value = cols
       await open(folderId.value ?? tree.find((f) => f.is_root)?.folder_id ?? null)
-    } catch {
-      error.value = 'load'
     } finally {
       loading.value = false
     }
@@ -113,15 +116,35 @@ export const useDriveStore = defineStore('drive', () => {
    */
   function schedule(): void {
     window.clearTimeout(timer)
-    if (settling.value) {
-      timer = window.setTimeout(() => void refresh(), POLL_MS)
+    if (polling && settling.value) {
+      timer = window.setTimeout(poll, POLL_MS)
+    }
+  }
+
+  /**
+   * Asks once more on behalf of the timer.
+   *
+   * A rejected poll used to escape as an unhandled promise and take the timer
+   * with it, leaving a document reading "processing" for as long as the tab
+   * stayed open. A failed round is dropped and the next one is armed, since a
+   * single lost answer says nothing about the one after it.
+   */
+  async function poll(): Promise<void> {
+    try {
+      await refresh()
+    } catch {
+      schedule()
     }
   }
 
   /**
    * Stops the polling, so a closed panel makes no further requests.
+   *
+   * The store outlives the view that opened it, so a refresh already in flight
+   * has to be told not to arm the next one when it lands.
    */
   function stop(): void {
+    polling = false
     window.clearTimeout(timer)
   }
 
@@ -160,10 +183,13 @@ export const useDriveStore = defineStore('drive', () => {
     if (!folderId.value) {
       return
     }
-    for (const file of files) {
-      await api.uploadDocument(folderId.value, file)
+    try {
+      for (const file of files) {
+        await api.uploadDocument(folderId.value, file)
+      }
+    } finally {
+      await refresh()
     }
-    await refresh()
   }
 
   /**
@@ -178,9 +204,16 @@ export const useDriveStore = defineStore('drive', () => {
 
   /**
    * Moves a document into another folder.
+   *
+   * The selection is dropped because the document has left the folder on
+   * screen: keeping it would show its card beside the breadcrumb of a folder
+   * it is no longer in.
    */
   async function move(id: string, folder: string): Promise<void> {
     await api.updateDocument(id, { folder })
+    if (selected.value?.document_id === id) {
+      selected.value = null
+    }
     await refresh()
   }
 
@@ -221,7 +254,18 @@ export const useDriveStore = defineStore('drive', () => {
   async function removeFolder(id: string): Promise<void> {
     const parent = folders.value.find((f) => f.folder_id === id)?.parent ?? null
     await api.deleteFolder(id)
-    folders.value = folders.value.filter((f) => f.folder_id !== id)
+    const gone = new Set([id])
+    let grew = true
+    while (grew) {
+      grew = false
+      for (const folder of folders.value) {
+        if (folder.parent && gone.has(folder.parent) && !gone.has(folder.folder_id)) {
+          gone.add(folder.folder_id)
+          grew = true
+        }
+      }
+    }
+    folders.value = folders.value.filter((f) => !gone.has(f.folder_id))
     await open(parent ?? root.value?.folder_id ?? null)
   }
 
@@ -232,7 +276,6 @@ export const useDriveStore = defineStore('drive', () => {
     selected,
     folderId,
     loading,
-    error,
     current,
     root,
     children,

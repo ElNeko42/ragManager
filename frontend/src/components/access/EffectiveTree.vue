@@ -1,67 +1,38 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { useTree } from '../../composables/useTree'
 import type { ResolvedFolder } from '../../api/access'
 
 const props = defineProps<{ folders: ResolvedFolder[]; selected: string | null }>()
 const emit = defineEmits<{ open: [id: string] }>()
 
 const { t } = useI18n()
-const collapsed = ref<Record<string, boolean>>({})
 
-interface Row {
-  id: string
-  name: string
-  depth: number
-  allow: boolean
-  source: string
-  hasChildren: boolean
-  collapsed: boolean
-}
+const nodes = computed(() =>
+  props.folders.map((folder) => ({
+    id: folder.folder_id,
+    parent: folder.parent,
+    label: folder.parent === null ? t('drive.everything') : folder.name,
+    allow: folder.effect === 'allow',
+    source: t(`permissions.source.${folder.source}`)
+  }))
+)
 
-const rows = computed<Row[]>(() => {
-  const out: Row[] = []
-  const walk = (parent: string | null, depth: number) => {
-    for (const folder of props.folders.filter((f) => f.parent === parent)) {
-      const children = props.folders.filter((f) => f.parent === folder.folder_id)
-      const shut = collapsed.value[folder.folder_id] === true
-      out.push({
-        id: folder.folder_id,
-        name: folder.parent === null ? t('drive.everything') : folder.name,
-        depth,
-        allow: folder.effect === 'allow',
-        source: t(`permissions.source.${folder.source}`),
-        hasChildren: children.length > 0,
-        collapsed: shut
-      })
-      if (!shut) {
-        walk(folder.folder_id, depth + 1)
-      }
-    }
-  }
-  walk(null, 0)
-  return out
-})
-
-/**
- * Folds or unfolds one branch of the tree.
- */
-function fold(id: string): void {
-  collapsed.value = { ...collapsed.value, [id]: !collapsed.value[id] }
-}
+const { rows, fold } = useTree(nodes)
 </script>
 
 <template>
   <ul class="rows">
-    <li v-for="row in rows" :key="row.id" :style="{ paddingLeft: `${row.depth * 16}px` }">
+    <li v-for="row in rows" :key="row.node.id" :style="{ paddingLeft: `${row.depth * 16}px` }">
       <button
         v-if="row.hasChildren"
         type="button"
         class="caret"
         :aria-expanded="!row.collapsed"
-        :aria-label="row.name"
-        @click="fold(row.id)"
+        :aria-label="`${row.collapsed ? t('common.expand') : t('common.collapse')} ${row.node.label}`"
+        @click="fold(row.node.id)"
       >
         {{ row.collapsed ? '▸' : '▾' }}
       </button>
@@ -69,15 +40,15 @@ function fold(id: string): void {
 
       <button
         type="button"
-        :class="['node', { on: row.id === selected }]"
-        @click="emit('open', row.id)"
+        :class="['node', { on: row.node.id === selected }]"
+        @click="emit('open', row.node.id)"
       >
-        <span class="name">{{ row.name }}</span>
+        <span class="name">{{ row.node.label }}</span>
         <span class="verdicts">
-          <span :class="['verdict', row.allow ? 'allow' : 'deny']">
-            {{ row.allow ? t('permissions.allowed') : t('permissions.denied') }}
+          <span :class="['verdict', row.node.allow ? 'allow' : 'deny']">
+            {{ row.node.allow ? t('permissions.allowed') : t('permissions.denied') }}
           </span>
-          <span class="source">{{ row.source }}</span>
+          <span class="source">{{ row.node.source }}</span>
         </span>
       </button>
     </li>

@@ -1,6 +1,7 @@
 """The Celery task that turns a document into searchable vectors."""
 
 import logging
+import re
 
 from celery import shared_task
 from django.conf import settings
@@ -70,11 +71,25 @@ def mark_succeeded(job, document, chunk_count):
     document.save(update_fields=["processing_status", "chunk_count", "updated_at"])
 
 
+CREDENTIALS_IN_URL = re.compile(r"(?P<scheme>[a-zA-Z][\w+.-]*://)[^/\s@]*@")
+
+
+def redact(text):
+    """Remove the user and password a library may have echoed inside a URL.
+
+    An exception raised by a storage or embedding client often repeats the
+    endpoint it was given, credentials included. That text is stored on the job
+    and shown to the owner, so the secret would end up in the database in plain
+    text and in a browser. Returns the message with the credentials replaced.
+    """
+    return CREDENTIALS_IN_URL.sub(r"\g<scheme>***@", text)
+
+
 def mark_failed(job, document, error):
     """Record a failed job and the reason it gave."""
     job.status = ProcessingStatus.FAILED
     job.finished_at = timezone.now()
-    job.error_message = f"{type(error).__name__}: {error}"
+    job.error_message = redact(f"{type(error).__name__}: {error}")
     job.save(update_fields=["status", "finished_at", "error_message"])
     document.processing_status = ProcessingStatus.FAILED
     document.save(update_fields=["processing_status", "updated_at"])

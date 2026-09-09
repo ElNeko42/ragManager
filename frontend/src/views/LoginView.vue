@@ -11,6 +11,7 @@ import BaseWindow from '../components/ui/BaseWindow.vue'
 import LanguageSwitcher from '../components/layout/LanguageSwitcher.vue'
 import ThemeToggle from '../components/layout/ThemeToggle.vue'
 import { ApiError } from '../api/client'
+import { describeError } from '../api/errors'
 import { useSessionStore } from '../stores/session'
 
 const { t } = useI18n()
@@ -55,9 +56,8 @@ function describe(cause: unknown): string {
     if (cause.status === 429) {
       return t('login.throttled')
     }
-    return t('common.unexpectedError')
   }
-  return t('login.unreachable')
+  return describeError(cause, t)
 }
 </script>
 

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import BaseButton from '../ui/BaseButton.vue'
+import ConfirmDialog from '../ui/ConfirmDialog.vue'
 import TokenRow from './TokenRow.vue'
 import { formatDate } from '../../api/format'
 import type { AgentRow } from '../../stores/agents'
@@ -17,6 +18,24 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const confirming = ref(false)
+const revoking = ref<string | null>(null)
+
+const deletionCost = computed(() => [
+  t('agents.deleteCost.tokens', { count: props.row.tokens.length }),
+  t('agents.deleteCost.rules', { count: props.row.rules.length }),
+  t('agents.deleteCost.searches')
+])
+
+/**
+ * Carries out the revocation the owner has just agreed to.
+ */
+function confirmRevoke(): void {
+  const tokenId = revoking.value
+  revoking.value = null
+  if (tokenId) {
+    emit('revoke', tokenId)
+  }
+}
 
 const initials = computed(() => props.row.agent.name.slice(0, 2).toUpperCase())
 
@@ -45,7 +64,7 @@ const rules = computed(() => {
         v-for="token in row.tokens"
         :key="token.token_id"
         :token="token"
-        @revoke="emit('revoke', token.token_id)"
+        @revoke="revoking = token.token_id"
       />
       <p v-if="!row.tokens.length" class="none">{{ t('agents.noTokens') }}</p>
     </div>
@@ -61,15 +80,28 @@ const rules = computed(() => {
     </div>
 
     <div class="danger">
-      <BaseButton v-if="!confirming" variant="quiet" @click="confirming = true">
-        {{ t('agents.delete') }}
-      </BaseButton>
-      <template v-else>
-        <span class="ask">{{ t('agents.deleteAsk') }}</span>
-        <button type="button" class="yes" @click="emit('remove')">{{ t('agents.deleteYes') }}</button>
-        <BaseButton variant="quiet" @click="confirming = false">{{ t('drive.cancel') }}</BaseButton>
-      </template>
+      <BaseButton variant="quiet" @click="confirming = true">{{ t('agents.delete') }}</BaseButton>
     </div>
+
+    <ConfirmDialog
+      v-if="confirming"
+      :title="t('agents.delete')"
+      :question="t('agents.deleteAsk', { name: row.agent.name })"
+      :consequences="deletionCost"
+      :confirm-label="t('agents.deleteYes')"
+      @confirm="confirming = false; emit('remove')"
+      @cancel="confirming = false"
+    />
+
+    <ConfirmDialog
+      v-if="revoking"
+      :title="t('agents.revokeTitle')"
+      :question="t('agents.revokeAsk', { name: row.agent.name })"
+      :consequences="[t('agents.revokeCost.now'), t('agents.revokeCost.forever')]"
+      :confirm-label="t('agents.revokeYes')"
+      @confirm="confirmRevoke"
+      @cancel="revoking = null"
+    />
   </article>
 </template>
 
@@ -173,19 +205,5 @@ const rules = computed(() => {
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
 
-.ask {
-  font-size: 12.5px;
-  color: var(--rm-neg);
-}
 
-.yes {
-  padding: 7px 12px;
-  border: var(--rm-border-width) solid var(--rm-border);
-  border-radius: 999px;
-  background: var(--rm-neg-soft);
-  color: var(--rm-neg);
-  font-weight: 700;
-  font-size: 12.5px;
-  cursor: pointer;
-}
 </style>

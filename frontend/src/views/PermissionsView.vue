@@ -8,14 +8,14 @@ import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import EffectiveTree from '../components/access/EffectiveTree.vue'
+import { useAction } from '../composables/useAction'
 import { useAccessStore } from '../stores/access'
 
 const { t } = useI18n()
 const route = useRoute()
 const store = useAccessStore()
 
-const busy = ref(false)
-const failure = ref('')
+const { busy, failure, run } = useAction()
 
 const breadcrumb = computed(
   () => store.path.map((f) => (f.parent === null ? '' : f.name)).join('/') || '/'
@@ -61,24 +61,10 @@ const origin = computed(() => {
     : t('permissions.inheritedDeny', { from: decidedBy.value })
 })
 
-/**
- * Runs one panel action, showing why it failed instead of failing silently.
- */
-async function run(action: () => Promise<unknown>): Promise<void> {
-  busy.value = true
-  failure.value = ''
-  try {
-    await action()
-  } catch {
-    failure.value = t('common.unexpectedError')
-  } finally {
-    busy.value = false
-  }
-}
-
 onMounted(() => {
   const wanted = typeof route.query.agent === 'string' ? route.query.agent : null
-  void run(() => store.load(wanted))
+  const folder = typeof route.query.folder === 'string' ? route.query.folder : null
+  void run(() => store.load(wanted, folder))
 })
 </script>
 

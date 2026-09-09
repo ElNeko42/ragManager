@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { useTree } from '../../composables/useTree'
 import type { Folder } from '../../api/drive'
 
 const props = defineProps<{ folders: Folder[]; selected: string | null }>()
@@ -9,15 +10,8 @@ const emit = defineEmits<{ open: [id: string] }>()
 
 const { t } = useI18n()
 const query = ref('')
-const collapsed = ref<Record<string, boolean>>({})
 
-interface Row {
-  id: string
-  name: string
-  depth: number
-  hasChildren: boolean
-  collapsed: boolean
-}
+const needle = computed(() => query.value.trim().toLowerCase())
 
 /**
  * Names the root by what it holds rather than by its stored slug.
@@ -26,53 +20,18 @@ function labelOf(folder: Folder): string {
   return folder.is_root ? t('drive.everything') : folder.name
 }
 
-/**
- * Reports whether a folder or anything below it matches the filter.
- *
- * A branch is kept when a descendant matches, so filtering never hides the
- * path that leads to a hit.
- */
-function branchMatches(folder: Folder, needle: string): boolean {
-  if (labelOf(folder).toLowerCase().includes(needle)) {
-    return true
-  }
-  return props.folders
-    .filter((f) => f.parent === folder.folder_id)
-    .some((child) => branchMatches(child, needle))
-}
+const nodes = computed(() =>
+  props.folders.map((folder) => ({
+    id: folder.folder_id,
+    parent: folder.parent,
+    label: labelOf(folder)
+  }))
+)
 
-const rows = computed<Row[]>(() => {
-  const needle = query.value.trim().toLowerCase()
-  const out: Row[] = []
-  const walk = (parent: string | null, depth: number) => {
-    for (const folder of props.folders.filter((f) => f.parent === parent)) {
-      if (needle && !branchMatches(folder, needle)) {
-        continue
-      }
-      const children = props.folders.filter((f) => f.parent === folder.folder_id)
-      const shut = !needle && collapsed.value[folder.folder_id] === true
-      out.push({
-        id: folder.folder_id,
-        name: labelOf(folder),
-        depth,
-        hasChildren: children.length > 0,
-        collapsed: shut
-      })
-      if (!shut) {
-        walk(folder.folder_id, depth + 1)
-      }
-    }
-  }
-  walk(null, 0)
-  return out
+const { rows, fold } = useTree(nodes, {
+  keep: (node) => !needle.value || node.label.toLowerCase().includes(needle.value),
+  expandAll: () => needle.value !== ''
 })
-
-/**
- * Folds or unfolds one branch of the tree.
- */
-function fold(id: string): void {
-  collapsed.value = { ...collapsed.value, [id]: !collapsed.value[id] }
-}
 </script>
 
 <template>
@@ -86,14 +45,14 @@ function fold(id: string): void {
     />
 
     <ul class="rows">
-      <li v-for="row in rows" :key="row.id" :style="{ paddingLeft: `${row.depth * 16}px` }">
+      <li v-for="row in rows" :key="row.node.id" :style="{ paddingLeft: `${row.depth * 16}px` }">
         <button
           v-if="row.hasChildren"
           type="button"
           class="caret"
           :aria-expanded="!row.collapsed"
-          :aria-label="row.name"
-          @click="fold(row.id)"
+          :aria-label="`${row.collapsed ? t('common.expand') : t('common.collapse')} ${row.node.label}`"
+          @click="fold(row.node.id)"
         >
           {{ row.collapsed ? '▸' : '▾' }}
         </button>
@@ -101,10 +60,10 @@ function fold(id: string): void {
 
         <button
           type="button"
-          :class="['node', { on: row.id === selected }]"
-          @click="emit('open', row.id)"
+          :class="['node', { on: row.node.id === selected }]"
+          @click="emit('open', row.node.id)"
         >
-          {{ row.name }}
+          {{ row.node.label }}
         </button>
       </li>
     </ul>

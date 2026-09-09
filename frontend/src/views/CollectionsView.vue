@@ -6,6 +6,7 @@ import AppShell from '../components/layout/AppShell.vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseBadge from '../components/ui/BaseBadge.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
+import { describeError } from '../api/errors'
 import { listCollections, listFolders } from '../api/drive'
 import type { Collection, Folder } from '../api/drive'
 
@@ -48,8 +49,8 @@ async function load(): Promise<void> {
     const [cols, tree] = await Promise.all([listCollections(), listFolders()])
     collections.value = cols
     folders.value = tree
-  } catch {
-    failure.value = t('common.unexpectedError')
+  } catch (cause) {
+    failure.value = describeError(cause, t)
   } finally {
     loading.value = false
   }
@@ -69,7 +70,9 @@ onMounted(load)
       <BaseAlert v-if="failure" tone="negative">{{ failure }}</BaseAlert>
       <BaseSpinner v-if="loading" :label="t('common.loading')" />
 
-      <div class="grid">
+      <p v-if="!cards.length && !loading" class="empty">{{ t('collections.none') }}</p>
+
+      <div v-else class="grid">
         <article v-for="card in cards" :key="card.id" class="card">
           <div class="head">
             <strong class="name">{{ card.name }}</strong>
@@ -93,6 +96,14 @@ onMounted(load)
 </template>
 
 <style scoped>
+.empty {
+  padding: var(--rm-space-5);
+  border: var(--rm-border-width) dashed var(--rm-line);
+  border-radius: 14px;
+  color: var(--rm-muted);
+  text-align: center;
+}
+
 .page {
   display: flex;
   flex-direction: column;

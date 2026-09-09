@@ -24,11 +24,13 @@ const active = computed({
     <span class="naming">
       <span class="ext" aria-hidden="true">{{ formatExtension(document.name) }}</span>
       <span class="text">
-        <span class="name">{{ document.name }}</span>
+        <button type="button" class="name" @click="emit('select')">{{ document.name }}</button>
         <span class="size">{{ formatBytes(document.size_bytes) }}</span>
       </span>
     </span>
-    <BaseSwitch v-model="active" :label="t('drive.switchLabel')" />
+    <span @click.stop>
+      <BaseSwitch v-model="active" :label="t('drive.switchLabel')" />
+    </span>
     <StatusBadge :progress="progressOf(document)" />
   </div>
 </template>
@@ -78,7 +80,14 @@ const active = computed({
 }
 
 .name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
 .size {

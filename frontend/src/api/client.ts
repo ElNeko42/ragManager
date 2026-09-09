@@ -1,3 +1,16 @@
+let onUnauthorized: (() => void) | null = null
+
+/**
+ * Registers what to do when the server says the session is gone.
+ *
+ * A panel that keeps rendering after the session expired shows a page full of
+ * stale data and fails every action, so one place decides what happens and
+ * every request routes through it.
+ */
+export function handleUnauthorized(handler: () => void): void {
+  onUnauthorized = handler
+}
+
 const CSRF_COOKIE = 'csrftoken'
 const CSRF_ENDPOINT = '/api/auth/csrf/'
 
@@ -56,6 +69,9 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin' })
   const body = await parseBody(response)
   if (!response.ok) {
+    if (response.status === 401 && path !== '/api/auth/session/' && path !== '/api/auth/login/') {
+      onUnauthorized?.()
+    }
     throw new ApiError(response.status, body)
   }
   return body as T

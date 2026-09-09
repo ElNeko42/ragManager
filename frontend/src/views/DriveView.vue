@@ -1,26 +1,37 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 
 import AppShell from '../components/layout/AppShell.vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
+import BaseField from '../components/ui/BaseField.vue'
+import BaseInput from '../components/ui/BaseInput.vue'
+import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSegmented from '../components/ui/BaseSegmented.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
 import DocumentCard from '../components/drive/DocumentCard.vue'
 import DocumentDetail from '../components/drive/DocumentDetail.vue'
 import DocumentRow from '../components/drive/DocumentRow.vue'
 import FolderCard from '../components/drive/FolderCard.vue'
 import FolderTree from '../components/drive/FolderTree.vue'
 import UploadZone from '../components/drive/UploadZone.vue'
+import { useAction } from '../composables/useAction'
 import { useDriveStore } from '../stores/drive'
+import type { Folder } from '../api/drive'
 
 const { t } = useI18n()
+const router = useRouter()
 const drive = useDriveStore()
 
 const view = ref('grid')
-const busy = ref(false)
-const failure = ref('')
+const renamingFolder = ref<Folder | null>(null)
+const folderDraft = ref('')
+const deletingFolder = ref<Folder | null>(null)
+const pendingMove = ref<string | null>(null)
+const { busy, failure, run } = useAction()
 
 const views = computed(() => [
   { value: 'grid', label: t('drive.grid') },
@@ -40,11 +51,12 @@ const meta = computed(() =>
 )
 
 const selectedPath = computed(() =>
-  drive.selected ? `${breadcrumb.value}/${drive.selected.name}`.replace('//', '/') : ''
+  drive.selected ? `${breadcrumb.value}/${drive.selected.name}`.replaceAll('//', '/') : ''
 )
 
 const subfolders = computed(() =>
   drive.children.map((folder) => ({
+    folder,
     id: folder.folder_id,
     name: folder.name,
     hasChildren: drive.folders.some((f) => f.parent === folder.folder_id),
@@ -52,19 +64,136 @@ const subfolders = computed(() =>
   }))
 )
 
-/**
- * Runs one panel action, showing why it failed instead of failing silently.
- */
-async function run(action: () => Promise<unknown>): Promise<void> {
-  busy.value = true
-  failure.value = ''
-  try {
-    await action()
-  } catch {
-    failure.value = t('common.unexpectedError')
-  } finally {
-    busy.value = false
+watch(
+  () => drive.folderId,
+  () => {
+    pendingMove.value = null
   }
+)
+
+/**
+ * Counts the folders that would go down with one folder.
+ */
+function descendantCount(id: string): number {
+  const gone = new Set([id])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const folder of drive.folders) {
+      if (folder.parent && gone.has(folder.parent) && !gone.has(folder.folder_id)) {
+        gone.add(folder.folder_id)
+        grew = true
+      }
+    }
+  }
+  return gone.size - 1
+}
+
+const folderDeletionCost = computed(() => [
+  t('drive.deleteFolderCost.subfolders', {
+    count: deletingFolder.value ? descendantCount(deletingFolder.value.folder_id) : 0
+  }),
+  t('drive.deleteFolderCost.documents'),
+  t('drive.deleteFolderCost.vectors')
+])
+
+/**
+ * Builds the full path of a folder, so two folders alike are told apart.
+ */
+function pathOf(id: string): string {
+  const names: string[] = []
+  let node = drive.folders.find((f) => f.folder_id === id) ?? null
+  while (node) {
+    names.unshift(node.is_root ? t('drive.everything') : node.name)
+    const parent: string | null = node.parent
+    node = drive.folders.find((f) => f.folder_id === parent) ?? null
+  }
+  return names.join(' / ')
+}
+
+const destinations = computed(() =>
+  drive.folders
+    .filter((folder) => folder.folder_id !== drive.folderId)
+    .map((folder) => ({ id: folder.folder_id, label: pathOf(folder.folder_id) }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+)
+
+/**
+ * Reports whether a move would land the document under another embedding model.
+ *
+ * Vectors of one model mean nothing to another, so such a move throws away
+ * what was indexed and queues the work again. The owner is told before it
+ * happens rather than discovering the document unsearchable afterwards.
+ */
+function crossesCollection(folderId: string): boolean {
+  const from = drive.folders.find((f) => f.folder_id === drive.folderId)
+  const to = drive.folders.find((f) => f.folder_id === folderId)
+  return Boolean(from && to && from.collection !== to.collection)
+}
+
+/**
+ * Moves the open document, asking first when the move costs its index.
+ */
+function askMove(folderId: string): void {
+  if (crossesCollection(folderId)) {
+    pendingMove.value = folderId
+    return
+  }
+  moveTo(folderId)
+}
+
+/**
+ * Carries out a move that has been decided on.
+ */
+function moveTo(folderId: string): void {
+  const documentId = drive.selected?.document_id
+  pendingMove.value = null
+  if (documentId) {
+    void run(() => drive.move(documentId, folderId))
+  }
+}
+
+/**
+ * Deletes a folder once the owner has agreed to lose what it holds.
+ */
+function confirmDeleteFolder(): void {
+  const folder = deletingFolder.value
+  deletingFolder.value = null
+  if (folder) {
+    void run(() => drive.removeFolder(folder.folder_id))
+  }
+}
+
+/**
+ * Opens the rename box on one folder, wherever it was asked for.
+ */
+function startRenameFolder(folder: Folder): void {
+  folderDraft.value = folder.name
+  renamingFolder.value = folder
+}
+
+/**
+ * Applies the new folder name, unless it was left empty or unchanged.
+ */
+function commitRenameFolder(): void {
+  const folder = renamingFolder.value
+  const name = folderDraft.value.trim()
+  renamingFolder.value = null
+  if (!folder || !name || name === folder.name) {
+    return
+  }
+  void run(() => drive.renameFolder(folder.folder_id, name))
+}
+
+/**
+ * Opens the permissions panel already showing one folder.
+ *
+ * Deciding what an agent may read starts from a folder far more often than
+ * from an agent, so the folder travels in the link instead of being hunted
+ * for again in the other screen.
+ */
+function openPermissions(folder: Folder): void {
+  void router.push({ name: 'permissions', query: { folder: folder.folder_id } })
 }
 
 /**
@@ -114,7 +243,28 @@ onUnmounted(() => drive.stop())
       <section class="content">
         <header class="head">
           <div class="titling">
-            <h2>{{ folderName }}</h2>
+            <div class="named">
+              <h2>{{ folderName }}</h2>
+              <template v-if="drive.current">
+                <BaseButton
+                  v-if="!drive.current.is_root"
+                  variant="quiet"
+                  @click="startRenameFolder(drive.current)"
+                >
+                  {{ t('drive.renameFolder') }}
+                </BaseButton>
+                <BaseButton variant="quiet" @click="openPermissions(drive.current)">
+                  {{ t('drive.folderPermissions') }}
+                </BaseButton>
+                <BaseButton
+                  v-if="!drive.current.is_root"
+                  variant="quiet"
+                  @click="deletingFolder = drive.current"
+                >
+                  {{ t('drive.deleteFolder') }}
+                </BaseButton>
+              </template>
+            </div>
             <p class="meta">{{ meta }}</p>
           </div>
           <BaseSegmented v-model="view" :segments="views" :label="t('drive.viewLabel')" />
@@ -138,6 +288,9 @@ onUnmounted(() => drive.stop())
               :meta="folder.meta"
               :has-children="folder.hasChildren"
               @open="run(() => drive.open(folder.id))"
+              @rename="startRenameFolder(folder.folder)"
+              @permissions="openPermissions(folder.folder)"
+              @remove="deletingFolder = folder.folder"
             />
           </div>
           <span class="eyebrow">{{ t('drive.filesHere') }}</span>
@@ -147,7 +300,7 @@ onUnmounted(() => drive.stop())
           {{ t('drive.emptyFolder') }}
         </p>
 
-        <div v-else-if="view === 'grid'" class="cards">
+        <div v-else-if="drive.documents.length && view === 'grid'" class="cards">
           <DocumentCard
             v-for="document in drive.documents"
             :key="document.document_id"
@@ -158,7 +311,7 @@ onUnmounted(() => drive.stop())
           />
         </div>
 
-        <div v-else class="table">
+        <div v-else-if="drive.documents.length" class="table">
           <div class="thead">
             <span>{{ t('drive.colName') }}</span>
             <span>{{ t('drive.colSwitch') }}</span>
@@ -180,8 +333,10 @@ onUnmounted(() => drive.stop())
         :document="drive.selected"
         :path="selectedPath"
         :collection="drive.collectionName"
+        :destinations="destinations"
         @active="(value) => run(() => drive.setActive(drive.selected!.document_id, value))"
         @rename="(name) => run(() => drive.rename(drive.selected!.document_id, name))"
+        @move="askMove"
         @remove="run(() => drive.remove(drive.selected!.document_id))"
       />
       <aside v-else class="placeholder">
@@ -189,6 +344,43 @@ onUnmounted(() => drive.stop())
         <p>{{ t('drive.pickDocument') }}</p>
       </aside>
     </div>
+
+    <BaseModal
+      v-if="renamingFolder"
+      :title="t('drive.renameFolder')"
+      @close="renamingFolder = null"
+    >
+      <form class="renaming" @submit.prevent="commitRenameFolder">
+        <BaseField :label="t('drive.folderName')" for-id="folder-name">
+          <BaseInput id="folder-name" v-model="folderDraft" :required="true" :disabled="busy" />
+        </BaseField>
+        <BaseButton type="submit" variant="primary" block :disabled="busy">
+          {{ t('drive.save') }}
+        </BaseButton>
+      </form>
+    </BaseModal>
+
+    <ConfirmDialog
+      v-if="deletingFolder"
+      :title="t('drive.deleteFolder')"
+      :question="t('drive.deleteFolderAsk', { name: deletingFolder.name })"
+      :consequences="folderDeletionCost"
+      :confirm-label="t('drive.deleteFolderYes')"
+      :busy="busy"
+      @confirm="confirmDeleteFolder"
+      @cancel="deletingFolder = null"
+    />
+
+    <ConfirmDialog
+      v-if="pendingMove"
+      :title="t('drive.moveTitle')"
+      :question="t('drive.moveAsk')"
+      :consequences="[t('drive.moveCost.discard'), t('drive.moveCost.requeue')]"
+      :confirm-label="t('drive.moveYes')"
+      :busy="busy"
+      @confirm="moveTo(pendingMove)"
+      @cancel="pendingMove = null"
+    />
   </AppShell>
 </template>
 
@@ -289,6 +481,20 @@ onUnmounted(() => drive.stop())
 .titling {
   margin-right: auto;
   min-width: 0;
+}
+
+.named {
+  display: flex;
+  align-items: center;
+  gap: var(--rm-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.renaming {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-space-4);
 }
 
 h2 {

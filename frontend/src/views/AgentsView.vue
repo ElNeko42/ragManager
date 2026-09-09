@@ -12,6 +12,7 @@ import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import AgentCard from '../components/agents/AgentCard.vue'
 import TokenReveal from '../components/agents/TokenReveal.vue'
+import { useAction } from '../composables/useAction'
 import { useAgentsStore } from '../stores/agents'
 
 const { t } = useI18n()
@@ -21,28 +22,24 @@ const agents = useAgentsStore()
 const creating = ref(false)
 const name = ref('')
 const expiry = ref('')
-const busy = ref(false)
-const failure = ref('')
+const { busy, failure, run, clear } = useAction()
 
 const reveal = ref<{ token: string; agentName: string } | null>(null)
 
 /**
- * Runs one panel action, showing why it failed instead of failing silently.
+ * Leaves the create dialog, dropping whatever it was complaining about.
  */
-async function run(action: () => Promise<unknown>): Promise<void> {
-  busy.value = true
-  failure.value = ''
-  try {
-    await action()
-  } catch {
-    failure.value = t('common.unexpectedError')
-  } finally {
-    busy.value = false
-  }
+function closeCreate(): void {
+  creating.value = false
+  clear()
 }
 
 /**
  * Turns the date the owner typed into what the API expects, or nothing.
+ *
+ * The date is read as the owner's own end of day and sent as the instant that
+ * matches it, so a token bought on a calendar day dies when that day does
+ * wherever the owner is.
  */
 function expiresAt(): string | null {
   return expiry.value ? new Date(`${expiry.value}T23:59:59`).toISOString() : null
@@ -89,7 +86,7 @@ onMounted(() => void run(() => agents.load()))
         <BaseButton variant="primary" @click="creating = true">{{ t('agents.newAgent') }}</BaseButton>
       </header>
 
-      <BaseAlert v-if="failure" tone="negative">{{ failure }}</BaseAlert>
+      <BaseAlert v-if="failure && !creating" tone="negative">{{ failure }}</BaseAlert>
       <BaseSpinner v-if="agents.loading || busy" :label="t('common.loading')" />
 
       <p v-if="!agents.rows.length && !agents.loading" class="empty">{{ t('agents.none') }}</p>
@@ -107,8 +104,9 @@ onMounted(() => void run(() => agents.load()))
       </div>
     </div>
 
-    <BaseModal v-if="creating" :title="t('agents.newAgentTitle')" @close="creating = false">
+    <BaseModal v-if="creating" :title="t('agents.newAgentTitle')" @close="closeCreate">
       <form class="form" @submit.prevent="submit">
+        <BaseAlert v-if="failure" tone="negative">{{ failure }}</BaseAlert>
         <BaseField :label="t('agents.name')" for-id="agent-name">
           <BaseInput id="agent-name" v-model="name" required :disabled="busy" />
         </BaseField>

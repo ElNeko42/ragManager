@@ -39,6 +39,22 @@ export const useAgentsStore = defineStore('agents', () => {
   }
 
   /**
+   * Reads one agent's tokens and rules again.
+   *
+   * Minting or revoking a token changes that agent alone, so reloading every
+   * card would ask the server for a page of answers that did not move.
+   */
+  async function refreshRow(agentId: string): Promise<void> {
+    const [tokens, rules] = await Promise.all([
+      api.listTokens(agentId),
+      access.listPermissions(agentId)
+    ])
+    rows.value = rows.value.map((row) =>
+      row.agent.agent_id === agentId ? { ...row, tokens, rules } : row
+    )
+  }
+
+  /**
    * Registers an agent and returns the one and only sight of its token.
    */
   async function create(name: string, expiresAt: string | null) {
@@ -52,7 +68,7 @@ export const useAgentsStore = defineStore('agents', () => {
    */
   async function issue(agentId: string, expiresAt: string | null) {
     const issued = await api.issueToken(agentId, expiresAt)
-    await load()
+    await refreshRow(agentId)
     return issued
   }
 
@@ -61,7 +77,7 @@ export const useAgentsStore = defineStore('agents', () => {
    */
   async function revoke(agentId: string, tokenId: string): Promise<void> {
     await api.revokeToken(agentId, tokenId)
-    await load()
+    await refreshRow(agentId)
   }
 
   /**
@@ -69,8 +85,8 @@ export const useAgentsStore = defineStore('agents', () => {
    */
   async function remove(agentId: string): Promise<void> {
     await api.deleteAgent(agentId)
-    await load()
+    rows.value = rows.value.filter((row) => row.agent.agent_id !== agentId)
   }
 
-  return { rows, loading, load, create, issue, revoke, remove }
+  return { rows, loading, load, refreshRow, create, issue, revoke, remove }
 })
