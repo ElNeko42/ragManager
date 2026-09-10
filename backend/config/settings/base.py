@@ -59,6 +59,8 @@ INSTALLED_APPS = [
     "apps.drive",
     "apps.access",
     "apps.ingestion",
+    "apps.search",
+    "apps.mcp",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -167,6 +169,10 @@ S3_ACCESS_KEY_ID = env("S3_ACCESS_KEY_ID")
 S3_SECRET_ACCESS_KEY = env("S3_SECRET_ACCESS_KEY")
 
 MAX_UPLOAD_BYTES = env_int("MAX_UPLOAD_BYTES", 536870912)
+
+RAGMANAGER_VERSION = "0.1.0"
+
+MCP_PATH = "/mcp/"
 
 EMBEDDING_API_KEY = env("EMBEDDING_API_KEY")
 

@@ -8,5 +8,6 @@ from config.health import health
 urlpatterns = [
     path("health/", health, name="health"),
     path("api/", include("config.api_urls")),
+    path("mcp/", include("apps.mcp.urls")),
     path("admin/", admin.site.urls),
 ]

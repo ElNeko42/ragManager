@@ -31,14 +31,6 @@ services:
       timeout: 5s
       retries: 12
 
-  qdrant:
-    image: qdrant/qdrant:v1.12.4
-    restart: unless-stopped
-    volumes:
-      - qdrant_data:/qdrant/storage
-    ports:
-      - "127.0.0.1:${QDRANT_HOST_PORT:-6333}:6333"
-
   minio:
     image: minio/minio:latest
     restart: unless-stopped
@@ -92,8 +84,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      qdrant:
-        condition: service_started
 
   worker:
     build:
@@ -131,7 +121,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  qdrant_data:
   minio_data:
   frontend_modules:
   model_cache:

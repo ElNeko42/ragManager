@@ -25,12 +25,16 @@ class RequestSizeLimitMiddleware:
 
         A body sent without declaring its length is refused outright, because
         a chunked request carries no length to compare and would otherwise walk
-        straight past the only limit there is. A streaming transport such as
-        the MCP endpoint sends exactly that kind of body, so when one is added
-        its path has to be exempted here or every call to it answers 411.
+        straight past the only limit there is. The MCP endpoint is the one
+        exception: a streaming client is free to send exactly that kind of
+        body, so only the demand for a length is lifted there. A declared
+        length is still checked, and a chunked body sent to it stays bounded by
+        the amount of non-file data Django will read at all, which is far below
+        the upload limit this guards.
         """
         declared = request.META.get("CONTENT_LENGTH") or ""
-        if request.method in METHODS_WITH_BODY and not declared.isdigit():
+        exempt = request.path.startswith(settings.MCP_PATH)
+        if request.method in METHODS_WITH_BODY and not declared.isdigit() and not exempt:
             return JsonResponse(
                 {"detail": "A Content-Length header is required"},
                 status=411,

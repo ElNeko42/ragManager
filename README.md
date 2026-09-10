@@ -12,11 +12,13 @@ people.
 ## Status
 
 Under construction. The management API, authentication, the ingestion
-pipeline, the permission resolver and the search endpoint work, and the web
-panel covers documents, agents and tokens, permissions and collections.
+pipeline, the permission resolver, the search endpoint and the MCP server
+work, and the web panel covers documents, agents and tokens, permissions and
+collections.
 
-The MCP server does not exist yet, so an agent cannot reach any of this
-through MCP: it can only call the search endpoint directly with its token.
+An external agent can reach the store either through the MCP endpoint or by
+calling the search endpoint directly with its token. Both doors resolve
+permissions the same way, from the same resolver.
 
 ## Stack
 
@@ -62,10 +64,29 @@ docker compose up --build
 | API | http://localhost:8000 |
 | Health report | http://localhost:8000/health/ |
 | MinIO console | http://localhost:9001 |
-| Qdrant dashboard | http://localhost:6333/dashboard |
 
 Every port is published on `127.0.0.1` only. On a remote server, reach them
 through an SSH tunnel rather than opening the ports.
+
+## Qdrant
+
+Qdrant is not part of this compose file. It is named in `QDRANT_URL` and
+`QDRANT_API_KEY` and can be a container of your own, a Qdrant on another host
+or a hosted one, which lets one Qdrant serve several projects instead of each
+raising its own. Collections are named after the embedding model, so projects
+sharing an instance do not collide.
+
+The collection is created on first use, with the vector size fixed by the
+model, so nothing has to be prepared by hand.
+
+Two things to watch:
+
+- **The port has to be in the URL.** The client assumes `6333` when the URL
+  names no port, so a Qdrant behind a TLS proxy needs `https://host:443`, not
+  `https://host`.
+- **Match the client to the server.** `qdrant-client` refuses to guarantee
+  anything when the major versions differ or the minor versions differ by more
+  than one, and says so in a warning rather than by failing.
 
 ## Development mode
 
@@ -166,6 +187,51 @@ Then issue the certificate with `certbot --nginx -d rag.example.com --redirect`.
 Serving both from one origin keeps the session cookie same-site, so the browser
 needs no CORS exception at all.
 
+## Connecting an agent over MCP
+
+The server speaks the Model Context Protocol over HTTP at `/mcp/`, and
+authenticates with the same bearer token an agent uses for the search
+endpoint. Issue one in the panel, under Agents, and grant the agent the
+folders it should read; a token that has been granted nothing can connect and
+will find nothing.
+
+Point a client at the endpoint with the token in an `Authorization` header.
+Most clients take a configuration like this:
+
+```json
+{
+  "mcpServers": {
+    "ragmanager": {
+      "type": "http",
+      "url": "https://your-host.example/mcp/",
+      "headers": {
+        "Authorization": "Bearer rmg_your_token_here"
+      }
+    }
+  }
+}
+```
+
+Three tools are offered:
+
+| Tool | What it does |
+| --- | --- |
+| `search_documents` | Searches everything the agent may read and returns the matching passages, text included. |
+| `search_in_folder` | The same, restricted to one folder and everything below it. |
+| `list_readable_folders` | Lists the folders the agent may read, so a search can be narrowed to one. |
+
+A folder the agent may not read and a folder that does not exist answer
+identically, so an agent cannot map the tree by probing it.
+
+Calls that embed a query are metered by the `SEARCH_THROTTLE_RATE` rate; the
+handshake and the tool listing are not, so an agent never spends its allowance
+on connecting.
+
+The endpoint answers each call in the reply to that call, in JSON, and keeps no
+session between calls. It opens no listening stream, which a client discovers
+by being refused on `GET`, and reconnecting costs nothing because there is no
+state to restore.
+
 ## Health report
 
 `GET /health/` probes PostgreSQL, Redis, Qdrant and the object storage bucket.
@@ -190,8 +256,9 @@ a second and needs no vector store, object store or embedding model.
 ```
 backend/            Django project
   config/           settings, routing, Celery application, health probes
+  apps/mcp/         the MCP endpoint: JSON-RPC envelope, tools, transport
 frontend/           Vue 3 single page application
-docker-compose.yml  postgres, redis, qdrant, minio, backend, worker, frontend
+docker-compose.yml  postgres, redis, minio, backend, worker, frontend
 ```
 
 The backend image carries a single application build with two entry points,
