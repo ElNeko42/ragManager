@@ -3,9 +3,16 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from apps.drive.models import Collection, Document, Folder, ProcessingStatus
+from apps.drive.models import (
+    Collection,
+    Document,
+    EmbeddingProvider,
+    Folder,
+    ProcessingStatus,
+)
 from apps.drive.serializers import DocumentDetailSerializer
 from apps.drive.services import update_document
 from apps.ingestion.models import ProcessingJob
@@ -296,3 +303,232 @@ class FolderDeletionEndpointTests(TestCase):
         self.client.logout()
         self.assertEqual(self.delete(self.branch).status_code, 401)
         self.assertTrue(Folder.objects.filter(pk=self.branch.pk).exists())
+
+
+class CollectionRegistrationTests(TestCase):
+    """What may be registered as an embedding model, and what may not."""
+
+    def setUp(self):
+        """Sign in an owner alongside the collection the instance ships with."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="a-long-enough-password"
+        )
+        self.client.force_login(self.owner)
+        self.existing = Collection.objects.get(is_default=True)
+
+    def register(self, **changes):
+        """Register a collection, taking the sensible defaults from one model."""
+        payload = {
+            "name": "openai-large",
+            "provider": "api",
+            "base_url": "https://api.example.com/v1",
+            "model_name": "text-embedding-3-large",
+            "vector_size": 3072,
+        }
+        payload.update(changes)
+        return self.client.post(
+            "/api/collections/", payload, content_type="application/json", secure=True
+        )
+
+    def test_a_collection_for_a_new_model_is_registered(self):
+        """The panel offers this, so the endpoint behind it has to answer."""
+        self.assertEqual(self.register().status_code, 201)
+
+    def test_a_second_collection_on_the_same_model_is_refused(self):
+        """Two copies of the same vectors means each folder searches half of them."""
+        self.register()
+        response = self.register(name="openai-large-again")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("model_name", response.json())
+
+    def test_the_refusal_names_the_collection_that_holds_the_model(self):
+        """Knowing which one already has it turns the error into the next step."""
+        self.register()
+        self.assertIn("openai-large", response_text(self.register(name="another")))
+
+    def test_the_same_model_at_another_endpoint_is_allowed(self):
+        """One model served by two providers is two different things to reach."""
+        self.register()
+        response = self.register(name="mirror", base_url="https://other.example.com/v1")
+        self.assertEqual(response.status_code, 201)
+
+    def test_a_local_collection_may_not_carry_an_endpoint(self):
+        """The provider has to tell the whole story of where vectors come from."""
+        response = self.register(provider="local", base_url="https://api.example.com/v1")
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_collection_served_by_an_api_needs_an_endpoint(self):
+        """Without it there is nowhere to send the text to be embedded."""
+        response = self.register(provider="api", base_url="")
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_name_already_taken_is_refused(self):
+        """The name reaches Qdrant verbatim and cannot be changed afterwards."""
+        self.assertEqual(self.register(name=self.existing.name).status_code, 400)
+
+    def test_the_database_refuses_a_duplicate_model_too(self):
+        """A rule only in the serializer is one the API can be talked around."""
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Collection.objects.create(
+                name="sneaked-in",
+                provider=self.existing.provider,
+                base_url=self.existing.base_url,
+                model_name=self.existing.model_name,
+                vector_size=self.existing.vector_size,
+            )
+
+
+def response_text(response):
+    """Return the body of a response as one searchable string."""
+    return response.content.decode("utf-8")
+
+
+class FolderCollectionTests(TestCase):
+    """Which folders may choose an embedding model, and which inherit one."""
+
+    def setUp(self):
+        """Sign in an owner with a second model and a first level folder."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="a-long-enough-password"
+        )
+        self.client.force_login(self.owner)
+        self.root = Folder.objects.get(parent__isnull=True)
+        self.other = Collection.objects.create(
+            name="second-model",
+            provider=EmbeddingProvider.LOCAL,
+            model_name="another/model",
+            vector_size=768,
+        )
+        self.first_level = Folder.objects.create(
+            name="Branch", parent=self.root, collection=self.other
+        )
+
+    def create(self, name, parent, collection=None):
+        """Ask for a folder, naming a collection only when one is given."""
+        payload = {"name": name, "parent": str(parent.pk)}
+        if collection is not None:
+            payload["collection"] = str(collection.pk)
+        return self.client.post(
+            "/api/folders/", payload, content_type="application/json", secure=True
+        )
+
+    def test_a_folder_under_the_root_may_choose_its_model(self):
+        """The first level is where a branch decides which model it uses."""
+        response = self.create("Chosen", self.root, self.other)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["collection"], str(self.other.pk))
+
+    def test_a_folder_deeper_down_may_not_choose_its_model(self):
+        """A subtree split across two models cannot be searched as one."""
+        response = self.create("Deeper", self.first_level, self.collection_of_root())
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("collection", response.json())
+
+    def test_a_folder_deeper_down_inherits_from_its_parent(self):
+        """Inheriting is what keeps a branch on one model throughout."""
+        response = self.create("Deeper", self.first_level)
+        self.assertEqual(response.json()["collection"], str(self.other.pk))
+
+    def test_a_folder_under_the_root_inherits_when_none_is_chosen(self):
+        """Not choosing has to mean the instance default, not no model at all."""
+        response = self.create("Plain", self.root)
+        self.assertEqual(response.json()["collection"], str(self.collection_of_root().pk))
+
+    def collection_of_root(self):
+        """Return the model the root folder currently uses."""
+        self.root.refresh_from_db()
+        return self.root.collection
+
+
+class BaseModelTests(TestCase):
+    """What happens when the instance changes the model its root uses."""
+
+    def setUp(self):
+        """Sign in an owner with a second model and a document in the root."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="a-long-enough-password"
+        )
+        self.client.force_login(self.owner)
+        self.root = Folder.objects.get(parent__isnull=True)
+        self.previous = self.root.collection
+        self.other = Collection.objects.create(
+            name="second-model",
+            provider=EmbeddingProvider.LOCAL,
+            model_name="another/model",
+            vector_size=768,
+        )
+        self.document = Document.objects.create(
+            folder=self.root,
+            name="report.txt",
+            content_type="text/plain",
+            size_bytes=1,
+            storage_key="report.txt",
+            is_agent_active=True,
+            processing_status=ProcessingStatus.READY,
+            chunk_count=3,
+        )
+        self.elsewhere = Folder.objects.create(
+            name="Elsewhere", parent=self.root, collection=self.previous
+        )
+
+    def switch(self, folder, collection):
+        """Point one folder at another model over HTTP."""
+        return self.client.patch(
+            f"/api/folders/{folder.pk}/",
+            {"collection": str(collection.pk)},
+            content_type="application/json",
+            secure=True,
+        )
+
+    @patch("apps.drive.services.ingestion")
+    def test_the_root_may_change_its_model(self, ingestion):
+        """This is where the instance says which model it uses by default."""
+        self.assertEqual(self.switch(self.root, self.other).status_code, 200)
+        self.root.refresh_from_db()
+        self.assertEqual(self.root.collection_id, self.other.pk)
+
+    @patch("apps.drive.services.ingestion")
+    def test_any_other_folder_may_not(self, ingestion):
+        """Its documents were vectorised with the model it already has."""
+        response = self.switch(self.elsewhere, self.other)
+        self.assertEqual(response.status_code, 400)
+        self.elsewhere.refresh_from_db()
+        self.assertEqual(self.elsewhere.collection_id, self.previous.pk)
+
+    @patch("apps.drive.services.ingestion")
+    def test_documents_in_the_root_lose_the_vectors_of_the_old_model(self, ingestion):
+        """Chunks of another model would answer searches they cannot be compared to."""
+        self.switch(self.root, self.other)
+        ingestion.discard_vectors.assert_called_once_with(self.previous.name, self.document.pk)
+
+    @patch("apps.drive.services.ingestion")
+    def test_documents_in_the_root_are_queued_again(self, ingestion):
+        """A document left unindexed after the change silently stops answering."""
+        self.switch(self.root, self.other)
+        ingestion.enqueue.assert_called_once()
+        self.document.refresh_from_db()
+        self.assertIsNone(self.document.processing_status)
+        self.assertEqual(self.document.chunk_count, 0)
+
+    @patch("apps.drive.services.ingestion")
+    def test_a_switched_off_document_is_not_queued(self, ingestion):
+        """Its switch is the owner's intention and a model change is not consent."""
+        self.document.is_agent_active = False
+        self.document.save(update_fields=["is_agent_active"])
+        self.switch(self.root, self.other)
+        ingestion.enqueue.assert_not_called()
+
+    @patch("apps.drive.services.ingestion")
+    def test_folders_below_the_root_keep_their_own_model(self, ingestion):
+        """A branch changing model under its documents is exactly what to avoid."""
+        self.switch(self.root, self.other)
+        self.elsewhere.refresh_from_db()
+        self.assertEqual(self.elsewhere.collection_id, self.previous.pk)
+
+    @patch("apps.drive.services.ingestion")
+    def test_setting_the_model_it_already_has_changes_nothing(self, ingestion):
+        """Re-saving the same choice must not throw away a working index."""
+        self.switch(self.root, self.previous)
+        ingestion.discard_vectors.assert_not_called()
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.processing_status, ProcessingStatus.READY)

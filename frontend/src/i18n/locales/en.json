@@ -54,11 +54,33 @@
     "tagline": "SELF-HOSTED RAG STORAGE"
   },
   "collections": {
+    "applyBase": "Apply",
+    "base": "Base model",
+    "baseHint": "What the root folder uses, and what a first level folder starts from. Documents sitting directly in the root are indexed again when it changes.",
+    "baseModel": "Base model of this instance",
+    "createGo": "Register the model",
     "default": "Default",
+    "delete": "Delete",
+    "deleteAsk": "Delete the collection “{name}”?",
+    "deleteCost": {
+      "registration": "Only the registration goes; Qdrant keeps whatever it stored.",
+      "vectors": "Nothing can be indexed with this model until it is registered again."
+    },
+    "deleteYes": "Delete the collection",
     "dimensions": "Dimensions",
+    "dimensionsHint": "The width this model returns. A wrong number fails on the first document.",
     "endpoint": "Endpoint",
+    "endpointHint": "Base URL of an OpenAI compatible endpoint, without /embeddings.",
+    "inUse": "Folders still point at this collection",
+    "keyNotice": "Put the credential in the environment as {key}, then restart. It is never stored in the database.",
     "local": "local (inside the container)",
+    "makeDefault": "Make default",
     "model": "Model",
+    "modelHintApi": "The model identifier this endpoint expects.",
+    "modelHintLocal": "A sentence-transformers name, downloaded on first use.",
+    "name": "Name",
+    "nameHint": "Lowercase letters, digits, hyphens. This name reaches Qdrant and never changes.",
+    "newCollection": "New collection",
     "none": "No collections yet.",
     "provider": "Provider",
     "remote": "api (OpenAI compatible)",
@@ -74,8 +96,8 @@
     "expand": "Expand",
     "language": "Language",
     "loading": "Loading…",
-    "retry": "Try again",
-    "unexpectedError": "Something went wrong."
+    "unexpectedError": "Something went wrong.",
+    "unsavedChanges": "You have changes that have not been saved. Leave and lose them?"
   },
   "drive": {
     "cancel": "Cancel",
@@ -84,6 +106,8 @@
     "colStatus": "PROCESSED",
     "colSwitch": "SWITCH",
     "collection": "Folder collection",
+    "collectionHint": "The model this branch is indexed with. It cannot be changed afterwards.",
+    "createFolderGo": "Create the folder",
     "delete": "Delete",
     "deleteAsk": "Delete it for good?",
     "deleteCost": {
@@ -121,6 +145,7 @@
     "folderName": "Folder name",
     "folderPermissions": "Folder access",
     "grid": "Grid",
+    "inheritsCollection": "It will be indexed with {name}, inherited from the folder it goes in.",
     "list": "List",
     "moveAsk": "The folder you picked uses a different embedding model.",
     "moveCost": {
@@ -132,7 +157,6 @@
     "moveTo": "Move to",
     "moveYes": "Move and index again",
     "newFolder": "New folder",
-    "newFolderName": "New folder",
     "note": {
       "ready": "Vectorised and queryable by any agent with permission.",
       "processing": "The switch is on; the queue is still vectorising.",
@@ -183,8 +207,7 @@
     "submitting": "Signing in…",
     "subtitle": "This instance has a single owner.",
     "throttled": "Too many attempts. Wait a moment and try again.",
-    "title": "Sign in",
-    "unreachable": "The server did not answer. Check that it is running."
+    "title": "Sign in"
   },
   "nav": {
     "agents": "Agents",

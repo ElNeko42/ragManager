@@ -74,6 +74,10 @@ class Collection(models.Model):
                 ),
                 name="collections_api_requires_base_url",
             ),
+            models.UniqueConstraint(
+                fields=["provider", "base_url", "model_name"],
+                name="collections_unique_model",
+            ),
         ]
 
     def __str__(self):

@@ -134,13 +134,23 @@ class FolderDetailView(APIView):
         )
 
     def patch(self, request, folder_id):
-        """Rename a folder, move it, or both."""
+        """Rename a folder, move it, change the root's model, or all three.
+
+        Changing the model is only offered on the root, where it is the model
+        this instance uses by default. Whatever sat directly in the root was
+        vectorised with the old one, so it is queued again under the new one.
+        """
         folder = get_object_or_404(Folder, pk=folder_id)
         serializer = FolderUpdateSerializer(data=request.data, instance=folder)
         serializer.is_valid(raise_exception=True)
-        for field, value in serializer.validated_data.items():
-            setattr(folder, field, value)
-        folder.save()
+        changes = dict(serializer.validated_data)
+        collection = changes.pop("collection", None)
+        with transaction.atomic():
+            for field, value in changes.items():
+                setattr(folder, field, value)
+            folder.save()
+            if collection is not None:
+                folder = services.change_folder_collection(folder, collection)
         return Response(FolderSerializer(folder).data)
 
     def delete(self, request, folder_id):

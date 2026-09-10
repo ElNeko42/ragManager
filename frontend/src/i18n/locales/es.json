@@ -54,11 +54,33 @@
     "tagline": "ALMACÉN RAG AUTOALOJADO"
   },
   "collections": {
+    "applyBase": "Aplicar",
+    "base": "Modelo base",
+    "baseHint": "El que usa la carpeta raíz, y del que parte una carpeta de primer nivel. Los documentos que estén directamente en la raíz se reindexan al cambiarlo.",
+    "baseModel": "Modelo base de esta instancia",
+    "createGo": "Registrar el modelo",
     "default": "Por defecto",
+    "delete": "Borrar",
+    "deleteAsk": "¿Borrar la colección «{name}»?",
+    "deleteCost": {
+      "registration": "Se borra solo el registro; Qdrant conserva lo que tuviera guardado.",
+      "vectors": "Nada podrá indexarse con este modelo hasta registrarlo otra vez."
+    },
+    "deleteYes": "Borrar la colección",
     "dimensions": "Dimensiones",
+    "dimensionsHint": "El ancho que devuelve el modelo. Un número equivocado falla en el primer documento.",
     "endpoint": "Endpoint",
+    "endpointHint": "URL base de un endpoint compatible con OpenAI, sin /embeddings.",
+    "inUse": "Todavía hay carpetas apuntando a esta colección",
+    "keyNotice": "Pon la credencial en el entorno como {key} y reinicia. Nunca se guarda en la base de datos.",
     "local": "local (en el contenedor)",
+    "makeDefault": "Poner por defecto",
     "model": "Modelo",
+    "modelHintApi": "El identificador de modelo que espera ese endpoint.",
+    "modelHintLocal": "Un nombre de sentence-transformers, se descarga en el primer uso.",
+    "name": "Nombre",
+    "nameHint": "Minúsculas, dígitos y guiones. Este nombre llega a Qdrant y no cambia nunca.",
+    "newCollection": "Nueva colección",
     "none": "Todavía no hay colecciones.",
     "provider": "Proveedor",
     "remote": "api (compatible OpenAI)",
@@ -74,8 +96,8 @@
     "expand": "Desplegar",
     "language": "Idioma",
     "loading": "Cargando…",
-    "retry": "Reintentar",
-    "unexpectedError": "Algo ha ido mal."
+    "unexpectedError": "Algo ha ido mal.",
+    "unsavedChanges": "Tienes cambios sin guardar. ¿Salir y perderlos?"
   },
   "drive": {
     "cancel": "Cancelar",
@@ -84,6 +106,8 @@
     "colStatus": "PROCESADO",
     "colSwitch": "INTERRUPTOR",
     "collection": "Colección de la carpeta",
+    "collectionHint": "El modelo con el que se indexa esta rama. No se puede cambiar después.",
+    "createFolderGo": "Crear la carpeta",
     "delete": "Borrar",
     "deleteAsk": "¿Lo borro para siempre?",
     "deleteCost": {
@@ -121,6 +145,7 @@
     "folderName": "Nombre de la carpeta",
     "folderPermissions": "Acceso a la carpeta",
     "grid": "Cuadrícula",
+    "inheritsCollection": "Se indexará con {name}, heredado de la carpeta donde va.",
     "list": "Lista",
     "moveAsk": "La carpeta que has elegido usa otro modelo de embeddings.",
     "moveCost": {
@@ -132,7 +157,6 @@
     "moveTo": "Mover a",
     "moveYes": "Mover y volver a indexar",
     "newFolder": "Nueva carpeta",
-    "newFolderName": "Nueva carpeta",
     "note": {
       "ready": "Vectorizado y consultable por los agentes con permiso.",
       "processing": "El interruptor está encendido; la cola todavía está vectorizando.",
@@ -183,8 +207,7 @@
     "submitting": "Entrando…",
     "subtitle": "Esta instancia tiene un único propietario.",
     "throttled": "Demasiados intentos. Espera un momento y vuelve a probar.",
-    "title": "Iniciar sesión",
-    "unreachable": "El servidor no ha respondido. Comprueba que está en marcha."
+    "title": "Iniciar sesión"
   },
   "nav": {
     "agents": "Agentes",

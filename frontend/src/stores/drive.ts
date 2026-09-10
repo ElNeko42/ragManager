@@ -231,11 +231,11 @@ export const useDriveStore = defineStore('drive', () => {
   /**
    * Creates a folder inside the open one and moves into it.
    */
-  async function addFolder(name: string): Promise<void> {
+  async function addFolder(name: string, collection?: string): Promise<void> {
     if (!folderId.value) {
       return
     }
-    const created = await api.createFolder(name, folderId.value)
+    const created = await api.createFolder(name, folderId.value, collection)
     folders.value = [...folders.value, created]
     await open(created.folder_id)
   }

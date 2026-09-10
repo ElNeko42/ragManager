@@ -6,7 +6,9 @@ import BaseAlert from '../ui/BaseAlert.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import BaseInput from '../ui/BaseInput.vue'
 import BaseSwitch from '../ui/BaseSwitch.vue'
+import BaseSelect from '../ui/BaseSelect.vue'
 import ConfirmDialog from '../ui/ConfirmDialog.vue'
+import UnsavedGuard from '../ui/UnsavedGuard.vue'
 import StatusBadge from './StatusBadge.vue'
 import { contentUrl } from '../../api/drive'
 import { formatBytes, formatDate } from '../../api/format'
@@ -43,6 +45,8 @@ watch(
   }
 )
 
+const dirty = computed(() => renaming.value && draft.value.trim() !== props.document.name)
+
 const progress = computed(() => progressOf(props.document))
 
 const active = computed({
@@ -76,6 +80,14 @@ function commitMove(): void {
 }
 
 /**
+ * Leaves the rename box, putting back the name the document still has.
+ */
+function cancelRename(): void {
+  renaming.value = false
+  draft.value = props.document.name
+}
+
+/**
  * Applies the new name, unless it was left unchanged or empty.
  */
 function commitRename(): void {
@@ -91,11 +103,13 @@ function commitRename(): void {
 
 <template>
   <aside class="detail">
+    <UnsavedGuard :dirty="dirty" />
     <span class="eyebrow">{{ t('drive.detail') }}</span>
 
     <form v-if="renaming" class="rename" @submit.prevent="commitRename">
       <BaseInput id="rename" v-model="draft" :required="true" />
       <BaseButton type="submit" variant="primary">{{ t('drive.save') }}</BaseButton>
+      <BaseButton variant="quiet" @click="cancelRename">{{ t('drive.cancel') }}</BaseButton>
     </form>
     <h3 v-else>{{ document.name }}</h3>
 
@@ -136,12 +150,13 @@ function commitRename(): void {
 
     <div v-if="destinations.length" class="moving">
       <label class="eyebrow" for="move-to">{{ t('drive.moveTo') }}</label>
-      <select id="move-to" v-model="destination" class="picker" @change="commitMove">
-        <option value="">{{ t('drive.movePick') }}</option>
-        <option v-for="folder in destinations" :key="folder.id" :value="folder.id">
-          {{ folder.label }}
-        </option>
-      </select>
+      <BaseSelect
+        id="move-to"
+        v-model="destination"
+        :options="destinations.map((folder) => ({ value: folder.id, label: folder.label }))"
+        :placeholder="t('drive.movePick')"
+        @change="commitMove"
+      />
     </div>
 
     <div class="actions">
@@ -177,17 +192,6 @@ function commitRename(): void {
   gap: 6px;
 }
 
-.picker {
-  width: 100%;
-  padding: 9px var(--rm-space-3);
-  border: var(--rm-border-width) solid var(--rm-border);
-  border-radius: 10px;
-  background: var(--rm-panel);
-  color: var(--rm-ink);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
 
 .detail {
   display: flex;

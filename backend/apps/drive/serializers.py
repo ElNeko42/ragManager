@@ -24,6 +24,18 @@ class CollectionSerializer(serializers.ModelSerializer):
 
 
 class CollectionCreateSerializer(CollectionSerializer):
+    """Registers a collection, refusing the clashes with a reason to act on.
+
+    The validators the framework builds from the table's own constraints are
+    dropped, because they answer a clash by listing the columns involved. The
+    checks below cover exactly the same ground and instead name the collection
+    already holding the model, which is the collection the owner wants to use.
+    The constraints stay on the table, so nothing gets past them either way.
+    """
+
+    class Meta(CollectionSerializer.Meta):
+        validators = []
+
     def validate_name(self, value):
         """Reject a name already used by another collection.
 
@@ -35,10 +47,16 @@ class CollectionCreateSerializer(CollectionSerializer):
         return value
 
     def validate(self, attrs):
-        """Require a base URL for a collection served by an API.
+        """Check the endpoint matches the provider, and the model is free.
 
-        A local collection must not carry one, so that the provider always
-        tells the whole story of where the vectors come from.
+        A local collection must carry no base URL and one served by an API
+        must carry one, so that the provider always tells the whole story of
+        where the vectors come from.
+
+        Two collections on the same model would hold two copies of the same
+        vectors, and a folder pointed at either would search only half of what
+        was indexed. The name of the collection already holding the model is
+        given, because the useful next step is to point the folder at that one.
         """
         provider = attrs.get("provider")
         base_url = attrs.get("base_url", "")
@@ -49,6 +67,13 @@ class CollectionCreateSerializer(CollectionSerializer):
         if provider == EmbeddingProvider.LOCAL and base_url:
             raise serializers.ValidationError(
                 {"base_url": "A local collection does not use a base URL"}
+            )
+        existing = Collection.objects.filter(
+            provider=provider, base_url=base_url, model_name=attrs.get("model_name")
+        ).first()
+        if existing:
+            raise serializers.ValidationError(
+                {"model_name": f"The collection {existing.name} already uses this model"}
             )
         return attrs
 
@@ -78,10 +103,20 @@ class FolderCreateSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        """Reject a name already taken among the children of the parent."""
+        """Reject a clashing name, and a model chosen below the first level.
+
+        Only a folder created directly under the root may choose its embedding
+        model. Deeper folders inherit their parent's, so that one branch of the
+        tree is searched with one model throughout and a subtree cannot end up
+        split across two collections that cannot be compared.
+        """
         if Folder.objects.filter(parent=attrs["parent"], name=attrs["name"]).exists():
             raise serializers.ValidationError(
                 {"name": "A folder with this name already exists here"}
+            )
+        if "collection" in attrs and attrs["parent"].parent_id is not None:
+            raise serializers.ValidationError(
+                {"collection": "Only a folder directly under the root may choose its model"}
             )
         return attrs
 
@@ -89,14 +124,25 @@ class FolderCreateSerializer(serializers.Serializer):
 class FolderUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255, required=False)
     parent = serializers.PrimaryKeyRelatedField(queryset=Folder.objects.all(), required=False)
+    collection = serializers.PrimaryKeyRelatedField(
+        queryset=Collection.objects.all(), required=False
+    )
 
     def validate(self, attrs):
         """Reject renames that clash and moves that would build a cycle.
 
         The root folder cannot be moved, and no folder may be placed inside
         its own subtree, which would detach that subtree from the tree.
+
+        Only the root may have its model changed, since the root is where the
+        instance says which model it uses by default. Any other folder keeps
+        the model its documents were vectorised with.
         """
         folder = self.instance
+        if "collection" in attrs and folder.parent_id is not None:
+            raise serializers.ValidationError(
+                {"collection": "Only the root folder may have its model changed"}
+            )
         parent = attrs.get("parent", folder.parent)
         name = attrs.get("name", folder.name)
         if folder.parent_id is None and "parent" in attrs:

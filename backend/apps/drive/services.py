@@ -235,3 +235,30 @@ def update_document(document, changes):
     elif document.is_agent_active and not was_active:
         ingestion.enqueue(document)
     return document
+
+
+def change_folder_collection(folder, collection):
+    """Point a folder at another embedding model and re-index what it holds.
+
+    Takes the folder and the collection to move it onto. Only the documents
+    sitting directly in the folder are touched: a subfolder carries its own
+    collection, chosen when it was created, so a branch keeps the model its
+    documents were vectorised with rather than silently changing under them.
+
+    The documents that were indexed lose their vectors and go back to the
+    queue, because vectors of one model mean nothing to another. Returns the
+    updated folder.
+    """
+    previous = folder.collection
+    if previous.pk == collection.pk:
+        return folder
+    folder.collection = collection
+    folder.save(update_fields=["collection", "updated_at"])
+    for document in folder.documents.all():
+        ingestion.discard_vectors(previous.name, document.pk)
+        document.processing_status = None
+        document.chunk_count = 0
+        document.save(update_fields=["processing_status", "chunk_count", "updated_at"])
+        if document.is_agent_active:
+            ingestion.enqueue(document)
+    return folder

@@ -51,14 +51,25 @@ export function listFolders(): Promise<Folder[]> {
 /**
  * Creates a folder under a parent.
  */
-export function createFolder(name: string, parent: string): Promise<Folder> {
-  return requestJson<Folder>('/api/folders/', 'POST', { name, parent })
+export function createFolder(
+  name: string,
+  parent: string,
+  collection?: string
+): Promise<Folder> {
+  const payload: Record<string, string> = { name, parent }
+  if (collection) {
+    payload.collection = collection
+  }
+  return requestJson<Folder>('/api/folders/', 'POST', payload)
 }
 
 /**
  * Renames a folder or moves it under another parent.
  */
-export function updateFolder(id: string, changes: Partial<Pick<Folder, 'name' | 'parent'>>) {
+export function updateFolder(
+  id: string,
+  changes: Partial<Pick<Folder, 'name' | 'parent' | 'collection'>>
+) {
   return requestJson<Folder>(`/api/folders/${id}/`, 'PATCH', changes)
 }
 
@@ -126,4 +137,37 @@ export function contentUrl(id: string): string {
  */
 export function listCollections(): Promise<Collection[]> {
   return request<Collection[]>('/api/collections/')
+}
+
+export interface NewCollection {
+  name: string
+  provider: 'local' | 'api'
+  base_url: string
+  model_name: string
+  vector_size: number
+  is_default: boolean
+}
+
+/**
+ * Registers a collection for one embedding model.
+ *
+ * The Qdrant collection behind it is not created here: it appears the first
+ * time something is vectorised, with the width this model was registered with.
+ */
+export function createCollection(collection: NewCollection): Promise<Collection> {
+  return requestJson<Collection>('/api/collections/', 'POST', collection)
+}
+
+/**
+ * Makes one collection the default, or stops it being the default.
+ */
+export function setDefaultCollection(id: string, isDefault: boolean): Promise<Collection> {
+  return requestJson<Collection>(`/api/collections/${id}/`, 'PATCH', { is_default: isDefault })
+}
+
+/**
+ * Removes a collection that no folder points at.
+ */
+export function deleteCollection(id: string): Promise<null> {
+  return request<null>(`/api/collections/${id}/`, { method: 'DELETE' })
 }

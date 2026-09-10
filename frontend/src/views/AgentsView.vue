@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
@@ -10,6 +10,7 @@ import BaseField from '../components/ui/BaseField.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
+import UnsavedGuard from '../components/ui/UnsavedGuard.vue'
 import AgentCard from '../components/agents/AgentCard.vue'
 import TokenReveal from '../components/agents/TokenReveal.vue'
 import { useAction } from '../composables/useAction'
@@ -25,6 +26,10 @@ const expiry = ref('')
 const { busy, failure, run, clear } = useAction()
 
 const reveal = ref<{ token: string; agentName: string } | null>(null)
+
+const dirty = computed(
+  () => creating.value && Boolean(name.value.trim() || expiry.value)
+)
 
 /**
  * Leaves the create dialog, dropping whatever it was complaining about.
@@ -77,6 +82,7 @@ onMounted(() => void run(() => agents.load()))
 
 <template>
   <AppShell>
+    <UnsavedGuard :dirty="dirty" />
     <div class="page">
       <header class="head">
         <div>
@@ -117,9 +123,14 @@ onMounted(() => void run(() => agents.load()))
         >
           <BaseInput id="agent-expiry" v-model="expiry" type="date" :disabled="busy" />
         </BaseField>
-        <BaseButton type="submit" variant="primary" block :disabled="busy">
-          {{ t('agents.createGo') }}
-        </BaseButton>
+        <div class="buttons">
+          <BaseButton variant="quiet" :disabled="busy" @click="closeCreate">
+            {{ t('drive.cancel') }}
+          </BaseButton>
+          <BaseButton type="submit" variant="primary" :disabled="busy">
+            {{ t('agents.createGo') }}
+          </BaseButton>
+        </div>
       </form>
     </BaseModal>
 
@@ -139,6 +150,14 @@ onMounted(() => void run(() => agents.load()))
 </template>
 
 <style scoped>
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--rm-space-2);
+  padding-top: var(--rm-space-2);
+  border-top: var(--rm-border-width) dotted var(--rm-line);
+}
+
 .page {
   display: flex;
   flex-direction: column;

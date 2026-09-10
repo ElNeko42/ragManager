@@ -10,8 +10,10 @@ import BaseField from '../components/ui/BaseField.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSegmented from '../components/ui/BaseSegmented.vue'
+import BaseSelect from '../components/ui/BaseSelect.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue'
+import UnsavedGuard from '../components/ui/UnsavedGuard.vue'
 import DocumentCard from '../components/drive/DocumentCard.vue'
 import DocumentDetail from '../components/drive/DocumentDetail.vue'
 import DocumentRow from '../components/drive/DocumentRow.vue'
@@ -31,7 +33,9 @@ const renamingFolder = ref<Folder | null>(null)
 const folderDraft = ref('')
 const deletingFolder = ref<Folder | null>(null)
 const pendingMove = ref<string | null>(null)
-const { busy, failure, run } = useAction()
+const addingFolder = ref(false)
+const newFolder = ref({ name: '', collection: '' })
+const { busy, failure, run, clear } = useAction()
 
 const views = computed(() => [
   { value: 'grid', label: t('drive.grid') },
@@ -196,19 +200,75 @@ function openPermissions(folder: Folder): void {
   void router.push({ name: 'permissions', query: { folder: folder.folder_id } })
 }
 
-/**
- * Creates a folder under a name that is free among its siblings.
- */
-function addFolder(): void {
-  const base = t('drive.newFolderName')
-  const taken = new Set(drive.children.map((f) => f.name))
-  let name = base
-  let n = 2
-  while (taken.has(name)) {
-    name = `${base} ${n}`
-    n += 1
+const atRoot = computed(() => drive.current?.is_root === true)
+
+const dirty = computed(() => {
+  if (addingFolder.value) {
+    return newFolder.value.name.trim() !== ''
   }
-  void run(() => drive.addFolder(name))
+  if (renamingFolder.value) {
+    return folderDraft.value.trim() !== renamingFolder.value.name
+  }
+  return false
+})
+
+const collectionOptions = computed(() =>
+  drive.collections.map((collection) => ({
+    value: collection.collection_id,
+    label: collection.name
+  }))
+)
+
+const inheritedCollection = computed(
+  () =>
+    drive.collections.find((c) => c.collection_id === drive.current?.collection)?.name ?? ''
+)
+
+/**
+ * Leaves the new folder form, dropping whatever it was complaining about.
+ */
+function cancelAddFolder(): void {
+  addingFolder.value = false
+  clear()
+}
+
+/**
+ * Leaves the rename box, dropping whatever it was complaining about.
+ */
+function cancelRenameFolder(): void {
+  renamingFolder.value = null
+  clear()
+}
+
+/**
+ * Opens the form for a new folder inside the one on screen.
+ *
+ * The model is offered only at the first level. Deeper down a folder inherits
+ * its parent's, so that one branch is searched with one model throughout, and
+ * the form says which one it will be rather than staying silent about it.
+ */
+function startAddFolder(): void {
+  newFolder.value = {
+    name: '',
+    collection: atRoot.value ? (drive.current?.collection ?? '') : ''
+  }
+  clear()
+  addingFolder.value = true
+}
+
+/**
+ * Creates the folder the form describes.
+ */
+function submitFolder(): void {
+  const name = newFolder.value.name.trim()
+  if (!name) {
+    return
+  }
+  const collection = atRoot.value ? newFolder.value.collection : undefined
+  void run(async () => {
+    await drive.addFolder(name, collection || undefined)
+    addingFolder.value = false
+  })
 }
 
 onMounted(() => void run(() => drive.start()))
@@ -217,11 +277,12 @@ onUnmounted(() => drive.stop())
 
 <template>
   <AppShell>
+    <UnsavedGuard :dirty="dirty" />
     <div class="drive">
       <aside class="sidebar">
         <header class="sidehead">
           <span class="eyebrow">{{ t('drive.tree') }}</span>
-          <button type="button" class="add" :title="t('drive.newFolder')" @click="addFolder">
+          <button type="button" class="add" :title="t('drive.newFolder')" @click="startAddFolder">
             +
           </button>
         </header>
@@ -272,13 +333,15 @@ onUnmounted(() => drive.stop())
 
         <UploadZone @files="(files) => run(() => drive.upload(files))" />
 
-        <BaseAlert v-if="failure" tone="negative">{{ failure }}</BaseAlert>
+        <BaseAlert v-if="failure && !addingFolder && !renamingFolder" tone="negative">
+          {{ failure }}
+        </BaseAlert>
         <BaseSpinner v-if="drive.loading || busy" :label="t('common.loading')" />
 
         <template v-if="subfolders.length">
           <div class="section">
             <span class="eyebrow">{{ t('drive.subfolders') }}</span>
-            <BaseButton @click="addFolder">{{ t('drive.newFolder') }}</BaseButton>
+            <BaseButton @click="startAddFolder">{{ t('drive.newFolder') }}</BaseButton>
           </div>
           <div class="cards">
             <FolderCard
@@ -345,18 +408,59 @@ onUnmounted(() => drive.stop())
       </aside>
     </div>
 
+    <BaseModal v-if="addingFolder" :title="t('drive.newFolder')" @close="cancelAddFolder">
+      <form class="folderform" @submit.prevent="submitFolder">
+        <BaseAlert v-if="failure" tone="negative">{{ failure }}</BaseAlert>
+
+        <BaseField :label="t('drive.folderName')" for-id="new-folder-name">
+          <BaseInput id="new-folder-name" v-model="newFolder.name" required :disabled="busy" />
+        </BaseField>
+
+        <BaseField
+          v-if="atRoot"
+          :label="t('drive.collection')"
+          for-id="new-folder-collection"
+          :hint="t('drive.collectionHint')"
+        >
+          <BaseSelect
+            id="new-folder-collection"
+            v-model="newFolder.collection"
+            :options="collectionOptions"
+            :disabled="busy"
+          />
+        </BaseField>
+        <BaseAlert v-else tone="info">
+          {{ t('drive.inheritsCollection', { name: inheritedCollection }) }}
+        </BaseAlert>
+
+        <div class="buttons">
+          <BaseButton variant="quiet" :disabled="busy" @click="cancelAddFolder">
+            {{ t('drive.cancel') }}
+          </BaseButton>
+          <BaseButton type="submit" variant="primary" :disabled="busy">
+            {{ t('drive.createFolderGo') }}
+          </BaseButton>
+        </div>
+      </form>
+    </BaseModal>
+
     <BaseModal
       v-if="renamingFolder"
       :title="t('drive.renameFolder')"
-      @close="renamingFolder = null"
+      @close="cancelRenameFolder"
     >
       <form class="renaming" @submit.prevent="commitRenameFolder">
         <BaseField :label="t('drive.folderName')" for-id="folder-name">
           <BaseInput id="folder-name" v-model="folderDraft" :required="true" :disabled="busy" />
         </BaseField>
-        <BaseButton type="submit" variant="primary" block :disabled="busy">
-          {{ t('drive.save') }}
-        </BaseButton>
+        <div class="buttons">
+          <BaseButton variant="quiet" :disabled="busy" @click="cancelRenameFolder">
+            {{ t('drive.cancel') }}
+          </BaseButton>
+          <BaseButton type="submit" variant="primary" :disabled="busy">
+            {{ t('drive.save') }}
+          </BaseButton>
+        </div>
       </form>
     </BaseModal>
 
@@ -385,6 +489,14 @@ onUnmounted(() => drive.stop())
 </template>
 
 <style scoped>
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--rm-space-2);
+  padding-top: var(--rm-space-2);
+  border-top: var(--rm-border-width) dotted var(--rm-line);
+}
+
 .drive {
   display: grid;
   grid-template-columns: minmax(0, 210px) minmax(320px, 1fr) minmax(0, 320px);
@@ -491,7 +603,8 @@ onUnmounted(() => drive.stop())
   min-width: 0;
 }
 
-.renaming {
+.renaming,
+.folderform {
   display: flex;
   flex-direction: column;
   gap: var(--rm-space-4);
