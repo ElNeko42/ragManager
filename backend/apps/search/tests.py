@@ -12,6 +12,8 @@ from apps.agents.tokens import issue_token
 from apps.drive.models import Collection, Document, Folder
 from apps.ingestion.embeddings import EmbeddingError
 from apps.ingestion import vectors
+from apps.accounts.models import User
+from apps.search.models import AgentQuery, QuerySource
 from apps.search.service import confirm_against_database, fuse, narrow_to_folder
 from apps.search.views import SearchThrottle
 
@@ -275,3 +277,110 @@ class SearchEndpointTests(TestCase):
                 HTTP_AUTHORIZATION=f"Bearer {issue_token(other)[1]}",
             )
         self.assertEqual(response.status_code, 200)
+
+
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
+class QueryLogTests(TestCase):
+    """The record of what agents went looking for."""
+
+    def setUp(self):
+        """Grant an agent one folder and give it a token."""
+        cache.clear()
+        self.agent = Agent.objects.create(name="asker")
+        self.token = issue_token(self.agent)[1]
+        self.root = Folder.objects.get(parent__isnull=True)
+        Permission.objects.create(
+            agent=self.agent, folder=self.root, effect=PermissionEffect.ALLOW
+        )
+
+    def ask(self, payload):
+        """Search as the agent, with the vector store answering nothing."""
+        with (
+            patch("apps.search.service.embed_texts", return_value=[[0.1]]),
+            patch("apps.ingestion.vectors.search", return_value=[]),
+        ):
+            return self.client.post(
+                "/api/search/",
+                payload,
+                content_type="application/json",
+                secure=True,
+                HTTP_AUTHORIZATION=f"Bearer {self.token}",
+            )
+
+    def test_a_search_is_written_down(self):
+        """A store whose client is an agent has to say what the agent asked."""
+        self.ask({"query": "where is the invoice"})
+        self.assertEqual(AgentQuery.objects.count(), 1)
+
+    def test_the_query_text_is_kept(self):
+        """Auditing what an agent searched for means keeping what it searched for."""
+        self.ask({"query": "where is the invoice"})
+        self.assertEqual(AgentQuery.objects.first().query, "where is the invoice")
+
+    def test_the_agent_name_is_copied_onto_the_record(self):
+        """The log still has to read as a sentence after an agent is renamed."""
+        self.ask({"query": "anything"})
+        self.agent.name = "renamed"
+        self.agent.save(update_fields=["name"])
+        self.assertEqual(AgentQuery.objects.first().agent_name, "asker")
+
+    def test_a_search_that_found_nothing_is_still_written_down(self):
+        """A run of empty answers is how a missing permission shows up."""
+        self.ask({"query": "nothing matches this"})
+        self.assertEqual(AgentQuery.objects.first().result_count, 0)
+
+    def test_the_door_the_query_came_through_is_recorded(self):
+        """Two doors reach the same store, and the log has to tell them apart."""
+        self.ask({"query": "anything"})
+        self.assertEqual(AgentQuery.objects.first().source, QuerySource.API)
+
+    def test_a_search_that_failed_is_written_down_as_failed(self):
+        """An agent getting nothing because a model was down is not an empty store."""
+        with patch("apps.search.service.embed_texts", side_effect=EmbeddingError("down")):
+            self.client.post(
+                "/api/search/",
+                {"query": "anything"},
+                content_type="application/json",
+                secure=True,
+                HTTP_AUTHORIZATION=f"Bearer {self.token}",
+            )
+        self.assertTrue(AgentQuery.objects.first().failed)
+
+    def test_a_failure_to_write_the_record_does_not_cost_the_answer(self):
+        """Logging is for the owner; the agent still has a question to answer."""
+        with patch("apps.search.service.AgentQuery.objects.create", side_effect=OSError("no")):
+            response = self.ask({"query": "anything"})
+        self.assertEqual(response.status_code, 200)
+
+    def test_an_agent_may_not_read_the_log(self):
+        """An agent reading it would learn what every other agent was asked."""
+        response = self.client.get(
+            "/api/search/log/", secure=True, HTTP_AUTHORIZATION=f"Bearer {self.token}"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_the_owner_reads_the_log(self):
+        """Auditing is the owner's, and the panel is where it is done."""
+        self.ask({"query": "anything"})
+        owner = User.objects.create_user(email="owner@example.com", password="pw-8x-forest")
+        self.client.force_login(owner)
+        response = self.client.get("/api/search/log/", secure=True)
+        self.assertEqual(response.json()["results"][0]["query"], "anything")
+
+    def test_the_log_can_be_narrowed_to_one_agent(self):
+        """Which agent asked is the first question an audit asks."""
+        other = Agent.objects.create(name="other")
+        self.ask({"query": "anything"})
+        owner = User.objects.create_user(email="owner@example.com", password="pw-8x-forest")
+        self.client.force_login(owner)
+        response = self.client.get(f"/api/search/log/?agent={other.pk}", secure=True)
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_a_malformed_agent_filter_is_a_bad_request(self):
+        """A value that is not an identifier must not reach the query layer."""
+        owner = User.objects.create_user(email="owner@example.com", password="pw-8x-forest")
+        self.client.force_login(owner)
+        response = self.client.get("/api/search/log/?agent=nonsense", secure=True)
+        self.assertEqual(response.status_code, 400)

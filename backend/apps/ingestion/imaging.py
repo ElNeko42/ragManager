@@ -64,7 +64,9 @@ def read_with_ocr(data, media_type):
             pytesseract.image_to_string(page, lang=settings.OCR_LANGUAGES) for page in pages
         ]
     except Exception as error:
-        raise ImagingError(f"Optical recognition failed: {type(error).__name__}: {error}")
+        raise ImagingError(
+            f"Optical recognition failed: {type(error).__name__}: {error}"
+        ) from error
     return "\n".join(part.strip() for part in recognised if part.strip())
 
 
@@ -100,9 +102,11 @@ def describe_through_api(data, media_type):
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
     except httpx.HTTPError as error:
-        raise ImagingError(f"The vision endpoint failed: {error}")
+        raise ImagingError(f"The vision endpoint failed: {error}") from error
     except (KeyError, IndexError, ValueError) as error:
-        raise ImagingError(f"The vision endpoint returned an unexpected body: {error}")
+        raise ImagingError(
+            f"The vision endpoint returned an unexpected body: {error}"
+        ) from error
 
 
 def rasterise(data, media_type):

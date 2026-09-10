@@ -1,17 +1,10 @@
 """Routes for the agent access rules."""
 
-from django.urls import path
+from rest_framework.routers import SimpleRouter
 
-from apps.access import views
+from apps.access.views import PermissionViewSet
 
-urlpatterns = [
-    path("", views.PermissionListCreateView.as_view(), name="permission-list"),
-    path(
-        "effective/<uuid:agent_id>/",
-        views.EffectiveAccessView.as_view(),
-        name="permission-effective",
-    ),
-    path(
-        "<uuid:permission_id>/", views.PermissionDetailView.as_view(), name="permission-detail"
-    ),
-]
+router = SimpleRouter()
+router.register("", PermissionViewSet, basename="permission")
+
+urlpatterns = router.urls

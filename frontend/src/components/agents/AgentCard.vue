@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import BaseButton from '../ui/BaseButton.vue'
+import BaseIcon from '../ui/BaseIcon.vue'
 import ConfirmDialog from '../ui/ConfirmDialog.vue'
 import TokenRow from './TokenRow.vue'
 import { formatDate } from '../../api/format'
@@ -75,12 +76,21 @@ const rules = computed(() => {
     </div>
 
     <div class="actions">
-      <BaseButton @click="emit('simulate')">{{ t('agents.simulate') }}</BaseButton>
-      <BaseButton @click="emit('issue')">{{ t('agents.newToken') }}</BaseButton>
+      <BaseButton @click="emit('simulate')">
+        <BaseIcon name="shield" :size="16" />
+        {{ t('agents.simulate') }}
+      </BaseButton>
+      <BaseButton @click="emit('issue')">
+        <BaseIcon name="key" :size="16" />
+        {{ t('agents.newToken') }}
+      </BaseButton>
     </div>
 
     <div class="danger">
-      <BaseButton variant="quiet" @click="confirming = true">{{ t('agents.delete') }}</BaseButton>
+      <BaseButton variant="quiet" @click="confirming = true">
+        <BaseIcon name="trash" :size="15" />
+        {{ t('agents.delete') }}
+      </BaseButton>
     </div>
 
     <ConfirmDialog
@@ -133,7 +143,7 @@ const rules = computed(() => {
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 10px;
   background: var(--rm-cyan);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-family: var(--rm-font-display);
   font-weight: 700;
 }
@@ -204,6 +214,4 @@ const rules = computed(() => {
   padding-top: var(--rm-space-2);
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
-
-
 </style>

@@ -3,6 +3,7 @@
 from rest_framework import serializers
 
 from apps.access.models import Permission, PermissionEffect
+from apps.common.fields import OptionalUUIDField
 
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -36,3 +37,14 @@ class PermissionSerializer(serializers.ModelSerializer):
 
 class PermissionUpdateSerializer(serializers.Serializer):
     effect = serializers.ChoiceField(choices=PermissionEffect.choices)
+
+
+class PermissionFilterSerializer(serializers.Serializer):
+    """Reads the query string of the rules listing.
+
+    The identifier is checked here rather than in the view, so a malformed one
+    is answered as the bad request it is instead of reaching the query layer
+    and surfacing as a 500.
+    """
+
+    agent = OptionalUUIDField(required=False, allow_null=True)

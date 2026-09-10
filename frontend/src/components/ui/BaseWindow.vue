@@ -62,6 +62,6 @@ defineProps<{ title: string }>()
 }
 
 .body {
-  padding: var(--rm-space-5) var(--rm-space-5) var(--rm-space-5);
+  padding: var(--rm-space-5);
 }
 </style>

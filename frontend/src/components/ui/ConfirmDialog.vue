@@ -90,17 +90,18 @@ const { t } = useI18n()
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 999px;
   background: var(--rm-pink);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-family: var(--rm-font-display);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 3px 3px 0 var(--rm-shadow);
+  transition: transform 90ms ease, box-shadow 90ms ease;
 }
 
 .danger:hover:not(:disabled) {
-  transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--rm-shadow);
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--rm-shadow);
 }
 
 .danger:disabled {

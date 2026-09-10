@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 
+import BaseIcon from '../ui/BaseIcon.vue'
+
 defineProps<{ name: string; meta: string; hasChildren: boolean; isRoot?: boolean }>()
 const emit = defineEmits<{ open: []; rename: []; permissions: []; remove: [] }>()
 
@@ -15,7 +17,7 @@ const { t } = useI18n()
         <strong>{{ name }}</strong>
         <span class="meta">{{ meta }}</span>
       </span>
-      <span v-if="hasChildren" class="more" aria-hidden="true">▸</span>
+      <BaseIcon v-if="hasChildren" class="more" name="chevronRight" :size="16" />
     </button>
 
     <div class="tools">
@@ -26,6 +28,7 @@ const { t } = useI18n()
         :aria-label="`${t('drive.renameFolder')}: ${name}`"
         @click="emit('rename')"
       >
+        <BaseIcon name="pencil" :size="13" />
         {{ t('drive.renameShort') }}
       </button>
       <button
@@ -35,6 +38,7 @@ const { t } = useI18n()
         :aria-label="`${t('drive.folderPermissions')}: ${name}`"
         @click="emit('permissions')"
       >
+        <BaseIcon name="shield" :size="13" />
         {{ t('drive.permissionsShort') }}
       </button>
       <button
@@ -45,6 +49,7 @@ const { t } = useI18n()
         :aria-label="`${t('drive.deleteFolder')}: ${name}`"
         @click="emit('remove')"
       >
+        <BaseIcon name="trash" :size="13" />
         {{ t('drive.deleteShort') }}
       </button>
     </div>
@@ -71,9 +76,9 @@ const { t } = useI18n()
 .open {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--rm-space-3);
   min-width: 0;
-  padding: 13px;
+  padding: var(--rm-space-4);
   border: 0;
   border-radius: 12px 12px 0 0;
   background: transparent;
@@ -85,13 +90,13 @@ const { t } = useI18n()
 
 .open:hover {
   background: var(--rm-cyan);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
 }
 
 .tab {
   flex: none;
-  width: 34px;
-  height: 28px;
+  width: 42px;
+  height: 34px;
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 4px 9px 9px 9px;
   background: var(--rm-amber);
@@ -105,36 +110,39 @@ const { t } = useI18n()
 }
 
 .naming strong {
-  font-size: 13.5px;
+  font-size: 15.5px;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
 
 .meta {
   font-family: var(--rm-font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--rm-muted);
 }
 
 .open:hover .meta {
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
 }
 
 .more {
   margin-left: auto;
-  font-family: var(--rm-font-mono);
-  font-size: 12px;
 }
 
 .tools {
   display: flex;
   gap: 6px;
-  padding: 8px 10px;
+  flex-wrap: wrap;
+  padding: 10px var(--rm-space-3);
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
 
 .tool {
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 5px 11px;
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 999px;
   background: var(--rm-panel);
@@ -148,7 +156,7 @@ const { t } = useI18n()
 
 .tool:hover {
   background: var(--rm-lime);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
 }
 
 .danger:hover {

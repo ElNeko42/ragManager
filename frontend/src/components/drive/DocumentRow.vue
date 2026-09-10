@@ -38,7 +38,7 @@ const active = computed({
 <style scoped>
 .row {
   display: grid;
-  grid-template-columns: minmax(80px, 1fr) auto auto;
+  grid-template-columns: var(--rm-doc-cols, minmax(80px, 1fr) 96px 120px);
   gap: var(--rm-space-3);
   align-items: center;
   padding: 10px var(--rm-space-4);
@@ -94,5 +94,12 @@ const active = computed({
   font-family: var(--rm-font-mono);
   font-size: 10px;
   color: var(--rm-muted);
+}
+
+@media (max-width: 600px) {
+  .row {
+    gap: var(--rm-space-2);
+    padding: 10px var(--rm-space-3);
+  }
 }
 </style>

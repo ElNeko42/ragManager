@@ -41,9 +41,9 @@ const active = computed({
 .card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--rm-space-3);
   min-width: 0;
-  padding: 13px;
+  padding: var(--rm-space-4);
   background: var(--rm-panel);
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 14px;
@@ -57,15 +57,19 @@ const active = computed({
   box-shadow: 6px 6px 0 var(--rm-shadow);
 }
 
-.on {
+.card.on {
   background: var(--rm-panel2);
   box-shadow: 6px 6px 0 var(--rm-pink);
+}
+
+.card.on:hover {
+  box-shadow: 8px 8px 0 var(--rm-pink);
 }
 
 .top {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--rm-space-3);
   min-width: 0;
 }
 
@@ -73,13 +77,13 @@ const active = computed({
   display: grid;
   place-items: center;
   flex: none;
-  width: 38px;
-  height: 44px;
+  width: 46px;
+  height: 54px;
   border: var(--rm-border-width) solid var(--rm-border);
-  border-radius: 6px 10px 6px 6px;
+  border-radius: 6px 12px 6px 6px;
   background: var(--rm-panel2);
   font-family: var(--rm-font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -95,7 +99,7 @@ const active = computed({
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 15.5px;
   font-weight: 700;
   line-height: 1.25;
   text-align: left;
@@ -105,7 +109,7 @@ const active = computed({
 
 .size {
   font-family: var(--rm-font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--rm-muted);
 }
 
@@ -114,7 +118,7 @@ const active = computed({
   align-items: center;
   justify-content: space-between;
   gap: var(--rm-space-2);
-  padding-top: 9px;
+  padding-top: var(--rm-space-3);
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
 </style>

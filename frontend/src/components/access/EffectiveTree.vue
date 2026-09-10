@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import BaseIcon from '../ui/BaseIcon.vue'
 import { useTree } from '../../composables/useTree'
 import type { ResolvedFolder } from '../../api/access'
 
@@ -34,16 +35,19 @@ const { rows, fold } = useTree(nodes)
         :aria-label="`${row.collapsed ? t('common.expand') : t('common.collapse')} ${row.node.label}`"
         @click="fold(row.node.id)"
       >
-        {{ row.collapsed ? '▸' : '▾' }}
+        <BaseIcon :name="row.collapsed ? 'chevronRight' : 'chevronDown'" :size="16" />
       </button>
-      <span v-else class="caret empty" aria-hidden="true">·</span>
+      <span v-else class="caret leaf" aria-hidden="true" />
 
       <button
         type="button"
         :class="['node', { on: row.node.id === selected }]"
         @click="emit('open', row.node.id)"
       >
-        <span class="name">{{ row.node.label }}</span>
+        <span class="name">
+          <BaseIcon :name="row.node.id === selected ? 'folderOpen' : 'folder'" :size="17" />
+          {{ row.node.label }}
+        </span>
         <span class="verdicts">
           <span :class="['verdict', row.node.allow ? 'allow' : 'deny']">
             {{ row.node.allow ? t('permissions.allowed') : t('permissions.denied') }}
@@ -59,7 +63,7 @@ const { rows, fold } = useTree(nodes)
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -67,24 +71,35 @@ const { rows, fold } = useTree(nodes)
 
 li {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 5px;
 }
 
+/* Sized to be hit, like the one in the drive's own tree. */
 .caret {
-  flex: none;
-  width: 20px;
   display: grid;
   place-items: center;
-  border: 0;
-  background: transparent;
-  color: var(--rm-muted);
-  font-family: var(--rm-font-mono);
-  font-size: 11px;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: var(--rm-border-width) solid var(--rm-line);
+  border-radius: 9px;
+  background: var(--rm-panel);
+  color: var(--rm-ink);
   cursor: pointer;
+  transition: background 90ms ease, border-color 90ms ease;
 }
 
-.empty {
-  color: var(--rm-line);
+.caret:hover {
+  border-color: var(--rm-border);
+  background: var(--rm-pink);
+  color: var(--rm-ink-on-bright);
+}
+
+.leaf {
+  border-color: transparent;
+  background: transparent;
   cursor: default;
 }
 
@@ -110,15 +125,16 @@ li {
 .on {
   border-color: var(--rm-border);
   background: var(--rm-cyan);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   box-shadow: 3px 3px 0 var(--rm-shadow);
 }
 
 .name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
 
@@ -150,7 +166,7 @@ li {
 }
 
 .on .verdict {
-  border: var(--rm-border-width) solid #17131f;
+  border: var(--rm-border-width) solid var(--rm-ink-on-bright);
 }
 
 .source {
@@ -160,7 +176,7 @@ li {
 }
 
 .on .source {
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   opacity: 0.75;
 }
 </style>

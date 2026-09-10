@@ -1,16 +1,16 @@
 """Session endpoints used by the management panel."""
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.debug import sensitive_post_parameters, sensitive_variables
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 from apps.accounts.permissions import IsOwner
-from apps.accounts.serializers import LoginSerializer, UserSerializer
+from apps.accounts.serializers import AccountSerializer, LoginSerializer, UserSerializer
 
 
 class LoginThrottle(AnonRateThrottle):
@@ -21,6 +21,17 @@ class LoginThrottle(AnonRateThrottle):
     """
 
     scope = "login"
+
+
+class AccountThrottle(UserRateThrottle):
+    """Caps how often the sign in details may be changed.
+
+    Every change is checked against the current password, so an open browser
+    left alone is a place to guess it from. The cap makes guessing slow without
+    touching the allowance of the rest of the API.
+    """
+
+    scope = "account"
 
 
 def csrf_required(view):
@@ -78,6 +89,40 @@ def logout_view(request):
 def session_view(request):
     """Return the owner behind the current session, or 403 when there is none."""
     return Response(UserSerializer(request.user).data)
+
+
+@sensitive_post_parameters("current_password", "new_password")
+@api_view(["PATCH"])
+@permission_classes([IsOwner])
+@throttle_classes([AccountThrottle])
+@sensitive_variables()
+def account_view(request):
+    """Change the address or the password the owner signs in with.
+
+    Takes the current password and at least one of the two. Answers 400 with a
+    message per field when the current password is wrong, the new one too weak
+    or the address malformed. The session survives a password change: signing
+    the owner out of the browser they just used would be punishing the one
+    person entitled to be there. Returns the updated account.
+    """
+    serializer = AccountSerializer(data=request.data, context={"request": request})
+    serializer.is_valid(raise_exception=True)
+    user = request.user
+
+    changed = []
+    email = serializer.validated_data.get("email")
+    if email and email != user.email:
+        user.email = email
+        changed.append("email")
+    password = serializer.validated_data.get("new_password")
+    if password:
+        user.set_password(password)
+        changed.append("password")
+
+    if changed:
+        user.save(update_fields=changed)
+        update_session_auth_hash(request, user)
+    return Response(UserSerializer(user).data)
 
 
 @ensure_csrf_cookie

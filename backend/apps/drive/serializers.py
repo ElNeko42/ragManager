@@ -1,10 +1,40 @@
 """Serializers for collections, folders and documents."""
 
+from django.conf import settings
 from rest_framework import serializers
 
+from apps.common.fields import OptionalUUIDField
 from apps.drive.models import Collection, Document, EmbeddingProvider, Folder
 from apps.drive.services import is_within
 from apps.ingestion.models import ProcessingJob
+
+MIN_CHUNK_WORDS = 20
+
+
+class ChunkingValidationMixin:
+    """Checks the chunk size a collection is asked to split its text with."""
+
+    def validate_chunking(self, attrs, instance=None):
+        """Reject a chunk size that would make the stored text unusable.
+
+        Takes the submitted values and the collection being changed, if there
+        is one. A chunk shorter than a couple of sentences carries no context
+        for the model to embed, and an overlap as long as the chunk repeats
+        every chunk whole and doubles what is stored for no gain. Returns the
+        values unchanged.
+        """
+        words = attrs.get("chunk_words", getattr(instance, "chunk_words", None))
+        overlap = attrs.get("chunk_overlap_words", getattr(instance, "chunk_overlap_words", None))
+        if words is not None and words < MIN_CHUNK_WORDS:
+            raise serializers.ValidationError(
+                {"chunk_words": f"A chunk needs at least {MIN_CHUNK_WORDS} words to mean anything"}
+            )
+        effective_words = words if words is not None else settings.CHUNK_WORDS
+        if overlap is not None and overlap >= effective_words:
+            raise serializers.ValidationError(
+                {"chunk_overlap_words": "The overlap has to be smaller than the chunk"}
+            )
+        return attrs
 
 
 class CollectionSerializer(serializers.ModelSerializer):
@@ -18,12 +48,14 @@ class CollectionSerializer(serializers.ModelSerializer):
             "model_name",
             "vector_size",
             "is_default",
+            "chunk_words",
+            "chunk_overlap_words",
             "created_at",
         )
         read_only_fields = ("collection_id", "created_at")
 
 
-class CollectionCreateSerializer(CollectionSerializer):
+class CollectionCreateSerializer(ChunkingValidationMixin, CollectionSerializer):
     """Registers a collection, refusing the clashes with a reason to act on.
 
     The validators the framework builds from the table's own constraints are
@@ -75,11 +107,19 @@ class CollectionCreateSerializer(CollectionSerializer):
             raise serializers.ValidationError(
                 {"model_name": f"The collection {existing.name} already uses this model"}
             )
-        return attrs
+        return self.validate_chunking(attrs)
 
 
-class CollectionUpdateSerializer(serializers.Serializer):
-    is_default = serializers.BooleanField()
+class CollectionUpdateSerializer(ChunkingValidationMixin, serializers.ModelSerializer):
+    """Changes the few things about a collection that are safe to change."""
+
+    class Meta:
+        model = Collection
+        fields = ("is_default", "chunk_words", "chunk_overlap_words")
+
+    def validate(self, attrs):
+        """Check the chunk size against what the collection already holds."""
+        return self.validate_chunking(attrs, self.instance)
 
 
 class FolderSerializer(serializers.ModelSerializer):
@@ -207,6 +247,39 @@ class DocumentUpdateSerializer(serializers.Serializer):
         name = attrs.get("name", document.name)
         clash = Document.objects.filter(folder=folder, name=name).exclude(pk=document.pk)
         if clash.exists():
+            raise serializers.ValidationError(
+                {"name": "A document with this name already exists in that folder"}
+            )
+        return attrs
+
+
+class DocumentFilterSerializer(serializers.Serializer):
+    """Reads the query string of the document listing.
+
+    The identifier is checked here rather than in the view, so a malformed one
+    is answered as the bad request it is instead of reaching the query layer
+    and surfacing as a 500.
+    """
+
+    folder = OptionalUUIDField(required=False, allow_null=True)
+
+
+class DocumentUploadSerializer(serializers.Serializer):
+    """Reads an upload: the file, where it goes and what it is called."""
+
+    file = serializers.FileField()
+    folder = serializers.PrimaryKeyRelatedField(queryset=Folder.objects.all())
+    name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        """Reject a name already taken inside the destination folder.
+
+        The table refuses the clash too, but a constraint reaching the caller
+        as a failed request says only that something went wrong; the folder
+        and the name are what the owner needs in order to choose another.
+        """
+        name = attrs.get("name") or attrs["file"].name
+        if Document.objects.filter(folder=attrs["folder"], name=name).exists():
             raise serializers.ValidationError(
                 {"name": "A document with this name already exists in that folder"}
             )

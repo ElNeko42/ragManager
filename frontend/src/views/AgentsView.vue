@@ -7,6 +7,7 @@ import AppShell from '../components/layout/AppShell.vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseField from '../components/ui/BaseField.vue'
+import BaseIcon from '../components/ui/BaseIcon.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
@@ -89,7 +90,10 @@ onMounted(() => void run(() => agents.load()))
           <h2>{{ t('agents.title') }}</h2>
           <p class="subtitle">{{ t('agents.subtitle') }}</p>
         </div>
-        <BaseButton variant="primary" @click="creating = true">{{ t('agents.newAgent') }}</BaseButton>
+        <BaseButton variant="primary" @click="creating = true">
+          <BaseIcon name="plus" :size="18" />
+          {{ t('agents.newAgent') }}
+        </BaseButton>
       </header>
 
       <BaseAlert v-if="failure && !creating" tone="negative">{{ failure }}</BaseAlert>
@@ -188,7 +192,7 @@ h2 {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
   gap: var(--rm-space-4);
 }
 

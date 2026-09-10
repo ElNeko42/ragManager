@@ -1,4 +1,4 @@
-import { request, requestJson } from './client'
+import { request, requestAll, requestJson } from './client'
 
 export type ProcessingStatus = 'pending' | 'processing' | 'ready' | 'failed' | null
 
@@ -38,6 +38,8 @@ export interface Collection {
   model_name: string
   vector_size: number
   is_default: boolean
+  chunk_words: number | null
+  chunk_overlap_words: number | null
   created_at: string
 }
 
@@ -45,7 +47,7 @@ export interface Collection {
  * Returns every folder, which is what the tree is built from.
  */
 export function listFolders(): Promise<Folder[]> {
-  return request<Folder[]>('/api/folders/')
+  return requestAll<Folder>('/api/folders/')
 }
 
 /**
@@ -84,7 +86,7 @@ export function deleteFolder(id: string): Promise<null> {
  * Returns the documents of one folder.
  */
 export function listDocuments(folder: string): Promise<Document[]> {
-  return request<Document[]>(`/api/documents/?folder=${encodeURIComponent(folder)}`)
+  return requestAll<Document>(`/api/documents/?folder=${encodeURIComponent(folder)}`)
 }
 
 /**
@@ -126,6 +128,16 @@ export function deleteDocument(id: string): Promise<null> {
 }
 
 /**
+ * Puts a document back in the queue.
+ *
+ * The queue retries a dependency that was unreachable on its own; this is for
+ * a run that failed for good, which is otherwise failed forever.
+ */
+export function reprocessDocument(id: string): Promise<Document> {
+  return requestJson<Document>(`/api/documents/${id}/reprocess/`, 'POST', {})
+}
+
+/**
  * Returns the address the browser downloads a document from.
  */
 export function contentUrl(id: string): string {
@@ -136,7 +148,7 @@ export function contentUrl(id: string): string {
  * Returns every collection, so a folder can show which model indexes it.
  */
 export function listCollections(): Promise<Collection[]> {
-  return request<Collection[]>('/api/collections/')
+  return requestAll<Collection>('/api/collections/')
 }
 
 export interface NewCollection {
@@ -146,6 +158,8 @@ export interface NewCollection {
   model_name: string
   vector_size: number
   is_default: boolean
+  chunk_words?: number | null
+  chunk_overlap_words?: number | null
 }
 
 /**

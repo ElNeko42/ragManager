@@ -4,11 +4,14 @@ Every tool is a thin wrapper over work the HTTP API already does, so that the
 two doors into this system can never disagree about what an agent may read.
 """
 
+import uuid
+
 from apps.access.models import PermissionEffect
-from apps.access.resolver import resolve_folder_effects
+from apps.access.resolver import reachable_folders
 from apps.drive.models import Document, Folder
 from apps.mcp import protocol
 from apps.search import service
+from apps.search.models import QuerySource
 
 SEARCH = "search_documents"
 SEARCH_FOLDER = "search_in_folder"
@@ -111,10 +114,33 @@ def search(agent, arguments, folder_required=False):
     """Answer one search, with or without a folder to stay within."""
     query = read_query(arguments)
     limit = read_limit(arguments)
-    folder_id = arguments.get("folder_id")
-    if folder_required and not folder_id:
-        raise protocol.RpcError(protocol.INVALID_PARAMS, "A folder_id is required")
-    return service.search(agent, query, limit, folder_id=folder_id if folder_id else None)
+    folder_id = read_folder_id(arguments, required=folder_required)
+    return service.search(
+        agent, query, limit, folder_id=folder_id, source=QuerySource.MCP
+    )
+
+
+def read_folder_id(arguments, required):
+    """Take the folder out of the arguments, or say why it cannot be used.
+
+    Takes the arguments and whether the tool needs a folder at all. A model
+    writing an identifier from memory gets it wrong sometimes, and a value
+    that is not an identifier has to come back as a refusal naming the
+    argument: left to the query layer it fails as an internal error, which
+    tells the caller its own call was fine and this server is broken. Returns
+    the identifier, or None when the tool searches everywhere.
+    """
+    raw = arguments.get("folder_id")
+    if not raw:
+        if required:
+            raise protocol.RpcError(protocol.INVALID_PARAMS, "A folder_id is required")
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (AttributeError, TypeError, ValueError):
+        raise protocol.RpcError(
+            protocol.INVALID_PARAMS, "The folder_id is not an identifier this server issued"
+        )
 
 
 def read_query(arguments):
@@ -151,10 +177,7 @@ def readable_folders(agent):
     parent is reported only when the agent reaches it too, so that the shape of
     the tree above never leaks through a broken link.
     """
-    effects = resolve_folder_effects(agent)
-    allowed = {
-        folder_id for folder_id, effect in effects.items() if effect == PermissionEffect.ALLOW
-    }
+    allowed = {folder_id for folder_id, _ in reachable_folders(agent)}
     allowed.update(
         Document.objects.filter(
             permissions__agent=agent, permissions__effect=PermissionEffect.ALLOW

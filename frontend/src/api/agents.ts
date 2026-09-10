@@ -1,4 +1,4 @@
-import { request, requestJson } from './client'
+import { request, requestAll, requestJson } from './client'
 
 export interface Agent {
   agent_id: string
@@ -28,7 +28,7 @@ export interface CreatedAgent extends IssuedToken {
  * Returns every agent registered on this instance.
  */
 export function listAgents(): Promise<Agent[]> {
-  return request<Agent[]>('/api/agents/')
+  return requestAll<Agent>('/api/agents/')
 }
 
 /**
@@ -52,7 +52,7 @@ export function deleteAgent(id: string): Promise<null> {
  * Returns the tokens of one agent, without their secret text.
  */
 export function listTokens(agentId: string): Promise<AgentToken[]> {
-  return request<AgentToken[]>(`/api/agents/${agentId}/tokens/`)
+  return requestAll<AgentToken>(`/api/agents/${agentId}/tokens/`)
 }
 
 /**

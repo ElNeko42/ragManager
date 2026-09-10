@@ -4,9 +4,9 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.decorators.debug import sensitive_variables
-from rest_framework import status
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsOwner
 from apps.agents.models import Agent, AgentToken
@@ -18,19 +18,31 @@ from apps.agents.serializers import (
     TokenRequestSerializer,
 )
 from apps.agents.tokens import issue_token
+from apps.drive.views import UUID_PATTERN
 
 
-class AgentListCreateView(APIView):
-    """Lists the agents of the instance and registers new ones."""
+class AgentViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Registers agents, issues their tokens and takes them away again."""
 
+    queryset = Agent.objects.all()
+    lookup_field = "agent_id"
+    lookup_value_regex = UUID_PATTERN
+    serializer_class = AgentSerializer
     permission_classes = [IsOwner]
 
-    def get(self, request):
-        """Return every registered agent."""
-        return Response(AgentSerializer(Agent.objects.all(), many=True).data)
+    def get_permissions(self):
+        """Let an agent reach the one route that is about itself.
+
+        Everything here is the owner's, except the identity route: that one is
+        how an agent confirms which name its token resolves to, so it is the
+        only one an agent token may enter.
+        """
+        if self.action == "identity":
+            return [IsAgent()]
+        return super().get_permissions()
 
     @sensitive_variables()
-    def post(self, request):
+    def create(self, request, *args, **kwargs):
         """Register an agent and mint its first token.
 
         Takes a name and an optional expiry. Returns the agent together with
@@ -50,39 +62,36 @@ class AgentListCreateView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
-
-class AgentDetailView(APIView):
-    """Removes an agent and everything issued to it."""
-
-    permission_classes = [IsOwner]
-
-    def delete(self, request, agent_id):
+    def destroy(self, request, *args, **kwargs):
         """Delete an agent along with its tokens and access rules.
 
         Returns 204 once the agent can no longer reach the instance.
         """
-        get_object_or_404(Agent, pk=agent_id).delete()
+        self.get_object().delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=False, methods=["get"], url_path="me", url_name="identity")
+    def identity(self, request):
+        """Return the agent behind the bearer token used for this request."""
+        return Response(AgentSerializer(request.user).data)
 
-class AgentTokenListCreateView(APIView):
-    """Lists the tokens of an agent and mints replacements."""
-
-    permission_classes = [IsOwner]
-
-    def get(self, request, agent_id):
-        """Return the tokens of an agent, without ever exposing their value."""
-        agent = get_object_or_404(Agent, pk=agent_id)
-        return Response(AgentTokenSerializer(agent.tokens.all(), many=True).data)
+    @action(detail=True, methods=["get", "post"], url_path="tokens", url_name="token-list")
+    def tokens(self, request, *args, **kwargs):
+        """List the tokens of an agent, or mint another one."""
+        if request.method == "POST":
+            return self.mint_token(request)
+        agent = self.get_object()
+        page = self.paginate_queryset(agent.tokens.all())
+        return self.get_paginated_response(AgentTokenSerializer(page, many=True).data)
 
     @sensitive_variables()
-    def post(self, request, agent_id):
+    def mint_token(self, request):
         """Mint an additional token for an agent.
 
         Takes an optional expiry. Returns the token text once; existing tokens
         keep working, so revoking the old one is a separate deliberate step.
         """
-        agent = get_object_or_404(Agent, pk=agent_id)
+        agent = self.get_object()
         serializer = TokenRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         record, token = issue_token(agent, serializer.validated_data.get("expires_at"))
@@ -91,30 +100,20 @@ class AgentTokenListCreateView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
-
-class AgentTokenRevokeView(APIView):
-    """Revokes a single token without deleting its trace."""
-
-    permission_classes = [IsOwner]
-
-    def post(self, request, agent_id, token_id):
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=f"tokens/(?P<token_id>{UUID_PATTERN})/revoke",
+        url_name="token-revoke",
+    )
+    def revoke(self, request, token_id=None, **kwargs):
         """Revoke a token immediately.
 
         The row survives so that the panel can still show the token existed.
         Returns the updated token, or 404 when it does not belong to the agent.
         """
-        token = get_object_or_404(AgentToken, pk=token_id, agent_id=agent_id)
+        token = get_object_or_404(AgentToken, pk=token_id, agent=self.get_object())
         if token.revoked_at is None:
             token.revoked_at = timezone.now()
             token.save(update_fields=["revoked_at"])
         return Response(AgentTokenSerializer(token).data)
-
-
-class AgentIdentityView(APIView):
-    """Lets an agent confirm which identity its token resolves to."""
-
-    permission_classes = [IsAgent]
-
-    def get(self, request):
-        """Return the agent behind the bearer token used for this request."""
-        return Response(AgentSerializer(request.user).data)

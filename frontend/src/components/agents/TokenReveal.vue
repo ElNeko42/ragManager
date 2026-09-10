@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import BaseAlert from '../ui/BaseAlert.vue'
 import BaseButton from '../ui/BaseButton.vue'
+import BaseIcon from '../ui/BaseIcon.vue'
 
 const props = defineProps<{ token: string; agentName: string }>()
 const emit = defineEmits<{ done: [] }>()
@@ -40,6 +41,7 @@ async function copy(): Promise<void> {
 
     <div class="row">
       <BaseButton variant="primary" @click="copy">
+        <BaseIcon :name="copied ? 'check' : 'copy'" :size="17" />
         {{ copied ? t('agents.copied') : t('agents.copy') }}
       </BaseButton>
       <BaseButton @click="emit('done')">{{ t('agents.savedIt') }}</BaseButton>

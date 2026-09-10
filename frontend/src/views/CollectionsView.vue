@@ -7,6 +7,7 @@ import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseBadge from '../components/ui/BaseBadge.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
 import BaseField from '../components/ui/BaseField.vue'
+import BaseIcon from '../components/ui/BaseIcon.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSegmented from '../components/ui/BaseSegmented.vue'
@@ -241,6 +242,7 @@ onMounted(() => void run(load))
           <p class="subtitle">{{ t('collections.subtitle') }}</p>
         </div>
         <BaseButton variant="primary" @click="startCreate">
+          <BaseIcon name="plus" :size="18" />
           {{ t('collections.newCollection') }}
         </BaseButton>
       </header>
@@ -411,10 +413,13 @@ onMounted(() => void run(load))
 
 .head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: flex-end;
   gap: var(--rm-space-3);
   flex-wrap: wrap;
+}
+
+.head div {
+  margin-right: auto;
 }
 
 .base {
@@ -441,7 +446,8 @@ onMounted(() => void run(load))
   display: flex;
   align-items: center;
   gap: var(--rm-space-2);
-  min-width: 260px;
+  flex-wrap: wrap;
+  min-width: min(100%, 260px);
 }
 
 .hint {
@@ -466,6 +472,7 @@ onMounted(() => void run(load))
 .tools {
   display: flex;
   gap: var(--rm-space-2);
+  flex-wrap: wrap;
   padding-top: var(--rm-space-2);
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
@@ -478,7 +485,7 @@ onMounted(() => void run(load))
 
 .empty {
   padding: var(--rm-space-5);
-  border: var(--rm-border-width) dashed var(--rm-line);
+  border: var(--rm-border-width) dashed var(--rm-border);
   border-radius: 14px;
   color: var(--rm-muted);
   text-align: center;
@@ -503,7 +510,7 @@ h2 {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
   gap: var(--rm-space-4);
 }
 
@@ -517,13 +524,6 @@ h2 {
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: var(--rm-radius);
   box-shadow: var(--rm-lift) var(--rm-lift) 0 var(--rm-shadow);
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
 }
 
 .name {

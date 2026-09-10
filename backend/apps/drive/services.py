@@ -237,6 +237,19 @@ def update_document(document, changes):
     return document
 
 
+def reprocess_document(document):
+    """Put a document back in the queue, whatever state it ended in.
+
+    Takes the document. The queue retries a dependency that was unreachable on
+    its own, but a run that failed for good needs somebody to decide it is
+    worth trying again: a file that arrived truncated, an extractor that has
+    since been fixed, a chunk size that has changed. Returns the document
+    marked pending.
+    """
+    ingestion.enqueue(document)
+    return document
+
+
 def change_folder_collection(folder, collection):
     """Point a folder at another embedding model and re-index what it holds.
 

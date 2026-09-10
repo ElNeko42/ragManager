@@ -4,6 +4,20 @@ from apps.access.models import Permission, PermissionEffect
 from apps.drive.models import Document, Folder
 
 
+def folder_rules(agent):
+    """Read the rules one agent holds over folders.
+
+    Takes the agent. Returns a dict of folder id to effect, which is small:
+    an instance has one rule per folder the owner wrote one for, not one per
+    folder that exists.
+    """
+    return dict(
+        Permission.objects.filter(agent=agent, folder__isnull=False).values_list(
+            "folder_id", "effect"
+        )
+    )
+
+
 def resolve_folder_effects(agent, folders=None):
     """Compute the effective rule of every folder for one agent.
 
@@ -14,14 +28,14 @@ def resolve_folder_effects(agent, folders=None):
     the walk never reaches stays denied, which is what an agent with no rule
     anywhere on its path should get and also what a tree damaged into a cycle
     should resolve to. Returns a dict of folder id to effect.
+
+    This reports on the whole tree, including everything the agent cannot
+    reach, which is what the owner's panel needs and what an agent's own
+    lookups must not pay for. Use reachable_folders for the latter.
     """
     if folders is None:
         folders = list(Folder.objects.values_list("folder_id", "parent_id"))
-    rules = dict(
-        Permission.objects.filter(agent=agent, folder__isnull=False).values_list(
-            "folder_id", "effect"
-        )
-    )
+    rules = folder_rules(agent)
     effects = {folder_id: PermissionEffect.DENY for folder_id, _ in folders}
     children = {}
     root = None
@@ -47,6 +61,40 @@ def resolve_folder_effects(agent, folders=None):
     return effects
 
 
+def reachable_folders(agent):
+    """List the folders one agent may read, with the collection each sits in.
+
+    Takes the agent. Returns a list of (folder id, collection id) pairs.
+
+    The walk starts at the folders the agent was allowed outright and goes
+    downwards one level per query, so the work grows with what the agent
+    reaches rather than with how many folders the instance holds: an agent
+    granted one folder costs the same whether the tree has ten folders or ten
+    thousand. A folder carrying a rule of its own is never entered from above,
+    because that rule is what decides it: a deny cuts the branch there, and an
+    allow is already a starting point of its own. Folders already seen are not
+    visited twice, so a tree damaged into a cycle ends the walk rather than
+    running forever.
+    """
+    rules = folder_rules(agent)
+    granted = [folder_id for folder_id, effect in rules.items() if effect == PermissionEffect.ALLOW]
+    seen = set(rules)
+    reached = list(Folder.objects.filter(pk__in=granted).values_list("folder_id", "collection_id"))
+    frontier = [folder_id for folder_id, _ in reached]
+    while frontier:
+        rows = [
+            row
+            for row in Folder.objects.filter(parent__in=frontier).values_list(
+                "folder_id", "collection_id"
+            )
+            if row[0] not in seen
+        ]
+        seen.update(folder_id for folder_id, _ in rows)
+        reached.extend(rows)
+        frontier = [folder_id for folder_id, _ in rows]
+    return reached
+
+
 def resolve_access(agent):
     """Group what an agent may search by the collection that holds it.
 
@@ -57,9 +105,6 @@ def resolve_access(agent):
     subtracted here: the search turns them into an exclusion on a filter that
     otherwise matches whole folders.
     """
-    tree = list(Folder.objects.values_list("folder_id", "parent_id", "collection_id"))
-    effects = resolve_folder_effects(agent, [(folder_id, parent_id) for folder_id, parent_id, _ in tree])
-    folder_collections = {folder_id: collection_id for folder_id, _, collection_id in tree}
     document_rules = Permission.objects.filter(agent=agent, document__isnull=False).values_list(
         "document_id", "effect"
     )
@@ -69,10 +114,8 @@ def resolve_access(agent):
     )
 
     access = {}
-    for folder_id, effect in effects.items():
-        if effect != PermissionEffect.ALLOW:
-            continue
-        entry = access.setdefault(folder_collections[folder_id], empty_scope())
+    for folder_id, collection_id in reachable_folders(agent):
+        entry = access.setdefault(collection_id, empty_scope())
         entry["folders"].append(folder_id)
     for document_id, effect in document_rules:
         collection_id = document_collections.get(document_id)

@@ -125,6 +125,9 @@ onUnmounted(() => {
 }
 
 .chrome {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: var(--rm-space-2);
@@ -169,7 +172,7 @@ onUnmounted(() => {
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 50%;
   background: var(--rm-pink);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-size: 15px;
   font-weight: 700;
   line-height: 1;
@@ -178,5 +181,19 @@ onUnmounted(() => {
 
 .body {
   padding: 18px;
+}
+
+@media (max-width: 600px) {
+  .backdrop {
+    padding: var(--rm-space-3);
+  }
+
+  .panel {
+    max-height: 92vh;
+  }
+
+  .body {
+    padding: var(--rm-space-3);
+  }
 }
 </style>

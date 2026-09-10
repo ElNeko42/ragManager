@@ -47,8 +47,15 @@ a:hover {
   color: var(--rm-pink);
 }
 
+/*
+ * The ring is drawn in ink rather than in pink, and offset so it lands on the
+ * surface behind the control. Pink is one of the fills the panel puts under
+ * buttons, and a ring the same colour as the button it surrounds is no ring at
+ * all: the modal close button, the danger button and the chosen segment all
+ * lost their focus outline that way.
+ */
 :focus-visible {
-  outline: 3px solid var(--rm-pink);
+  outline: 3px solid var(--rm-ink);
   outline-offset: 2px;
 }
 

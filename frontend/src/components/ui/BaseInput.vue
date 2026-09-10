@@ -35,7 +35,6 @@ input {
 }
 
 input:focus {
-  outline: none;
   background: var(--rm-panel);
   box-shadow: 3px 3px 0 var(--rm-shadow);
 }

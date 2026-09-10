@@ -24,11 +24,16 @@ const model = defineModel<string>({ required: true })
 </template>
 
 <style scoped>
+/*
+ * The ends are rounded on the buttons themselves rather than by clipping the
+ * group: an overflow that hides the corners hides the focus ring with them,
+ * which left the language and view switchers untrackable from the keyboard.
+ */
 .segmented {
   display: flex;
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 999px;
-  overflow: hidden;
+  background: var(--rm-panel2);
   font-family: var(--rm-font-mono);
   font-size: 11px;
   letter-spacing: 0.1em;
@@ -42,13 +47,31 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+button:first-child {
+  border-radius: 999px 0 0 999px;
+  padding-left: 13px;
+}
+
+button:last-child {
+  border-radius: 0 999px 999px 0;
+  padding-right: 13px;
+}
+
+button:only-child {
+  border-radius: 999px;
+}
+
+button + button {
+  border-left: var(--rm-border-width) solid var(--rm-border);
+}
+
+button:hover:not(.on) {
   color: var(--rm-ink);
 }
 
 .on {
   background: var(--rm-pink);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-weight: 700;
 }
 </style>

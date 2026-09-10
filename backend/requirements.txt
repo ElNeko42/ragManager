@@ -3,7 +3,11 @@ djangorestframework~=3.15
 psycopg[binary]~=3.2
 celery~=5.4
 redis~=5.2
-qdrant-client~=1.12
+# Pinned to the minor of the Qdrant this instance talks to (server 1.18.2).
+# The client and the server share a version line, and a client from a later
+# line can send a request the running server does not answer, which a rebuild
+# would introduce without a single line of this project changing.
+qdrant-client==1.18.0
 boto3~=1.35
 django-cors-headers~=4.6
 gunicorn~=23.0

@@ -115,7 +115,12 @@ function describe(cause: unknown): string {
   align-items: center;
   justify-content: center;
   min-height: 100%;
-  padding: var(--rm-space-5);
+  /*
+   * The top and bottom gutters both clear the fixed language and theme
+   * controls, so the window stays centred while it can no longer slide under
+   * them on a short or narrow screen.
+   */
+  padding: calc(var(--rm-space-5) * 2 + 20px) var(--rm-space-5);
 }
 
 .corner {

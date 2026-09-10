@@ -12,7 +12,12 @@ _loaded_models = {}
 
 
 class EmbeddingError(Exception):
-    """Raised when a collection's embedding model cannot produce vectors."""
+    """Raised when a collection's embedding model cannot produce vectors.
+
+    The cause is kept attached, because the queue decides whether to try again
+    by what actually went wrong: an endpoint that timed out is worth another
+    attempt, a model whose width disagrees with the collection never is.
+    """
 
 
 def get_local_model(model_name):
@@ -98,9 +103,11 @@ def embed_through_api(collection, texts):
         response.raise_for_status()
         payload = response.json()["data"]
     except httpx.HTTPError as error:
-        raise EmbeddingError(f"The embeddings endpoint failed: {error}")
+        raise EmbeddingError(f"The embeddings endpoint failed: {error}") from error
     except (KeyError, ValueError) as error:
-        raise EmbeddingError(f"The embeddings endpoint returned an unexpected body: {error}")
+        raise EmbeddingError(
+            f"The embeddings endpoint returned an unexpected body: {error}"
+        ) from error
     if len(payload) != len(texts):
         raise EmbeddingError(
             f"Asked for {len(texts)} embeddings and received {len(payload)}"

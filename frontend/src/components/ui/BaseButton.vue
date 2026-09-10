@@ -58,7 +58,7 @@ withDefaults(
 
 .primary {
   background: var(--rm-lime);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-family: var(--rm-font-display);
   font-size: 16px;
   letter-spacing: 0.02em;

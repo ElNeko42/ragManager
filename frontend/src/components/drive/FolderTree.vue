@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import BaseIcon from '../ui/BaseIcon.vue'
 import { useTree } from '../../composables/useTree'
 import type { Folder } from '../../api/drive'
 
@@ -36,16 +37,19 @@ const { rows, fold } = useTree(nodes, {
 
 <template>
   <div class="tree">
-    <input
-      v-model="query"
-      type="search"
-      class="filter"
-      :placeholder="t('drive.filterFolders')"
-      :aria-label="t('drive.filterFolders')"
-    />
+    <div class="finder">
+      <BaseIcon name="search" :size="16" />
+      <input
+        v-model="query"
+        type="search"
+        class="filter"
+        :placeholder="t('drive.filterFolders')"
+        :aria-label="t('drive.filterFolders')"
+      />
+    </div>
 
     <ul class="rows">
-      <li v-for="row in rows" :key="row.node.id" :style="{ paddingLeft: `${row.depth * 16}px` }">
+      <li v-for="row in rows" :key="row.node.id" :style="{ paddingLeft: `${row.depth * 18}px` }">
         <button
           v-if="row.hasChildren"
           type="button"
@@ -54,16 +58,20 @@ const { rows, fold } = useTree(nodes, {
           :aria-label="`${row.collapsed ? t('common.expand') : t('common.collapse')} ${row.node.label}`"
           @click="fold(row.node.id)"
         >
-          {{ row.collapsed ? '▸' : '▾' }}
+          <BaseIcon :name="row.collapsed ? 'chevronRight' : 'chevronDown'" :size="16" />
         </button>
-        <span v-else class="caret empty" aria-hidden="true">·</span>
+        <span v-else class="caret leaf" aria-hidden="true" />
 
         <button
           type="button"
           :class="['node', { on: row.node.id === selected }]"
           @click="emit('open', row.node.id)"
         >
-          {{ row.node.label }}
+          <BaseIcon
+            :name="row.node.id === selected || (row.hasChildren && !row.collapsed) ? 'folderOpen' : 'folder'"
+            :size="18"
+          />
+          <span class="label">{{ row.node.label }}</span>
         </button>
       </li>
     </ul>
@@ -77,25 +85,44 @@ const { rows, fold } = useTree(nodes, {
   gap: var(--rm-space-3);
 }
 
+.finder {
+  display: flex;
+  align-items: center;
+  gap: var(--rm-space-2);
+  padding: 0 10px;
+  border: var(--rm-border-width) solid var(--rm-line);
+  border-radius: 10px;
+  background: var(--rm-panel2);
+  color: var(--rm-muted);
+}
+
+.finder:focus-within {
+  border-color: var(--rm-border);
+  color: var(--rm-ink);
+}
+
 .filter {
   width: 100%;
-  padding: 7px 10px;
-  border: var(--rm-border-width) solid var(--rm-line);
-  border-radius: 9px;
-  background: var(--rm-panel2);
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  background: transparent;
   color: var(--rm-ink);
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 
 .filter:focus {
   outline: none;
-  border-color: var(--rm-border);
+}
+
+.filter::-webkit-search-cancel-button {
+  cursor: pointer;
 }
 
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -103,41 +130,56 @@ const { rows, fold } = useTree(nodes, {
 
 li {
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  gap: 5px;
 }
 
+/*
+ * The fold control is a button in its own right rather than a character in the
+ * margin: at the size a caret glyph rendered, hitting it on a laptop trackpad
+ * was a matter of luck, and on a touch screen it was below the size a finger
+ * can aim at.
+ */
 .caret {
-  flex: none;
-  width: 20px;
   display: grid;
   place-items: center;
-  border: 0;
-  background: transparent;
-  color: var(--rm-muted);
-  font-family: var(--rm-font-mono);
-  font-size: 11px;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: var(--rm-border-width) solid var(--rm-line);
+  border-radius: 9px;
+  background: var(--rm-panel);
+  color: var(--rm-ink);
   cursor: pointer;
+  transition: background 90ms ease, border-color 90ms ease;
 }
 
 .caret:hover {
-  color: var(--rm-pink);
+  border-color: var(--rm-border);
+  background: var(--rm-pink);
+  color: var(--rm-ink-on-bright);
 }
 
-.empty {
-  color: var(--rm-line);
+.leaf {
+  border-color: transparent;
+  background: transparent;
   cursor: default;
 }
 
 .node {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 9px 11px;
   border: var(--rm-border-width) solid transparent;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: var(--rm-ink);
+  font-size: 14px;
   text-align: left;
-  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -146,10 +188,16 @@ li {
   background: var(--rm-panel2);
 }
 
+.label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .on {
   border-color: var(--rm-border);
   background: var(--rm-cyan);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-weight: 700;
+  box-shadow: 2px 2px 0 var(--rm-shadow);
 }
 </style>

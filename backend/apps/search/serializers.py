@@ -1,6 +1,9 @@
-"""Serializers for the search endpoint."""
+"""Serializers for the search endpoint and the record it leaves."""
 
 from rest_framework import serializers
+
+from apps.common.fields import OptionalUUIDField
+from apps.search.models import AgentQuery
 
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
@@ -18,3 +21,29 @@ class SearchSerializer(serializers.Serializer):
         if not value.strip():
             raise serializers.ValidationError("The query cannot be empty")
         return value
+
+
+class AgentQuerySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AgentQuery
+        fields = (
+            "query_id",
+            "agent",
+            "agent_name",
+            "query",
+            "source",
+            "folder",
+            "limit",
+            "result_count",
+            "collections_searched",
+            "duration_ms",
+            "failed",
+            "created_at",
+        )
+        read_only_fields = fields
+
+
+class QueryLogFilterSerializer(serializers.Serializer):
+    """Reads the query string of the log listing."""
+
+    agent = OptionalUUIDField(required=False, allow_null=True)

@@ -15,6 +15,7 @@ from apps.agents.tokens import issue_token
 from apps.drive.models import Collection, Document, Folder, ProcessingStatus
 from apps.ingestion.embeddings import EmbeddingError
 from apps.mcp import protocol, tools
+from apps.search.models import AgentQuery, QuerySource
 
 TEST_RATES = {"search": "1000/min"}
 
@@ -248,7 +249,7 @@ class McpToolTests(TestCase):
             self.call(
                 tools.SEARCH_FOLDER, {"query": "anything", "folder_id": str(self.granted.pk)}
             )
-        self.assertEqual(search.call_args.kwargs["folder_id"], str(self.granted.pk))
+        self.assertEqual(search.call_args.kwargs["folder_id"], self.granted.pk)
 
     def test_a_tool_that_does_not_exist_is_refused(self):
         """A model inventing a tool name has to be told, not silently answered."""
@@ -295,3 +296,64 @@ class LengthExemptionTests(TestCase):
         request = self.factory.post(settings.MCP_PATH, data="{}", content_type="application/json")
         request.META["CONTENT_LENGTH"] = str(settings.MAX_UPLOAD_BYTES * 2)
         self.assertEqual(self.middleware(request).status_code, 413)
+
+
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
+class FolderArgumentTests(TestCase):
+    """What the folder search does with the identifier a model writes."""
+
+    def setUp(self):
+        """Give an agent a token and a folder it may read."""
+        self.agent = Agent.objects.create(name="caller")
+        self.token = issue_token(self.agent)[1]
+        self.folder = Folder.objects.get(parent__isnull=True)
+        Permission.objects.create(
+            agent=self.agent, folder=self.folder, effect=PermissionEffect.ALLOW
+        )
+
+    def call(self, arguments):
+        """Call the folder search with the given arguments."""
+        return self.client.post(
+            "/mcp/",
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": tools.SEARCH_FOLDER, "arguments": arguments},
+                }
+            ),
+            content_type="application/json",
+            secure=True,
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        ).json()
+
+    def test_an_identifier_that_is_not_one_is_refused_as_a_bad_argument(self):
+        """A model told its call could not be completed blames this server."""
+        answer = self.call({"query": "anything", "folder_id": "the-legal-folder"})
+        self.assertEqual(answer["error"]["code"], protocol.INVALID_PARAMS)
+
+    def test_the_refusal_names_the_argument_that_was_wrong(self):
+        """A model can correct an argument only if it is told which one."""
+        answer = self.call({"query": "anything", "folder_id": "the-legal-folder"})
+        self.assertIn("folder_id", answer["error"]["message"])
+
+    def test_an_identifier_of_the_right_shape_that_names_nothing_finds_nothing(self):
+        """A folder that never existed must read the same as one out of reach."""
+        with patch("apps.mcp.tools.service.search", return_value=[]) as search:
+            answer = self.call(
+                {"query": "anything", "folder_id": "6f1d5a7e-8c3b-4f2a-9d61-2b7e4c0a8f35"}
+            )
+        self.assertEqual(answer["result"]["structuredContent"]["results"], [])
+        search.assert_called_once()
+
+    def test_a_search_through_this_door_is_recorded_as_such(self):
+        """Two doors reach the same store, and the log has to tell them apart."""
+        with (
+            patch("apps.search.service.embed_texts", return_value=[[0.1]]),
+            patch("apps.ingestion.vectors.search", return_value=[]),
+        ):
+            self.call({"query": "anything", "folder_id": str(self.folder.pk)})
+        self.assertEqual(AgentQuery.objects.first().source, QuerySource.MCP)

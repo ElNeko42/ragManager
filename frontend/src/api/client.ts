@@ -109,3 +109,43 @@ async function parseBody(response: Response): Promise<unknown> {
     return text
   }
 }
+
+export interface Page<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
+
+/**
+ * Reads a listing that the server hands over one page at a time.
+ *
+ * The panel draws a whole folder tree and a whole folder at once, so it needs
+ * every row rather than the first page; the server pages anyway, because an
+ * instance holding thousands of documents cannot answer with all of them in
+ * one go. Follows the links the server sends rather than counting pages
+ * itself, so a row added between two requests cannot make it skip one.
+ */
+export async function requestAll<T>(path: string): Promise<T[]> {
+  const rows: T[] = []
+  let next: string | null = path
+  while (next) {
+    const page: Page<T> = await request<Page<T>>(next)
+    rows.push(...page.results)
+    next = page.next && samePathAndQuery(page.next)
+  }
+  return rows
+}
+
+/**
+ * Reduces the link the server sent to a path this panel can ask for.
+ *
+ * The server builds that link from the host the request arrived on, which
+ * behind a proxy is not always the host the browser is talking to. Only the
+ * path and the query are ever needed, and keeping them relative means the
+ * next page is fetched from wherever the panel itself was served.
+ */
+function samePathAndQuery(link: string): string {
+  const parsed = new URL(link, window.location.origin)
+  return `${parsed.pathname}${parsed.search}`
+}

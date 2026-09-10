@@ -1,33 +1,63 @@
 """Searching every collection an agent reaches and merging the results."""
 
+import logging
+import time
+
 from apps.access.resolver import resolve_access
 from apps.drive.models import Collection, Document, Folder
 from apps.drive.services import descendant_folders
 from apps.ingestion import vectors
 from apps.ingestion.embeddings import embed_texts
+from apps.search.models import AgentQuery, QuerySource
+
+logger = logging.getLogger(__name__)
 
 RANK_CONSTANT = 60
 POOL_FACTOR = 2
 
 
-def search(agent, query, limit, folder_id=None):
+def search(agent, query, limit, folder_id=None, source=QuerySource.API):
     """Find the chunks an agent may read that best answer a query.
 
-    Takes the agent, the query text, how many chunks to return at most and the
+    Takes the agent, the query text, how many chunks to return at most, the
     id of an optional folder to stay within, which includes everything below
-    it. A folder that does not exist narrows the answer to nothing, the same as
-    one the agent may not read. More chunks are fetched than asked for, because
-    the database has the last word on which of them may be returned and a
-    rejected one must not cost the caller a slot. Returns
-    the chosen chunks, best first. The cost of the answer is set by this limit
-    rather than by how many collections were consulted, so widening an agent's
-    access does not widen what a model is later asked to read.
+    it, and which door the query came through. A folder that does not exist
+    narrows the answer to nothing, the same as one the agent may not read.
+    More chunks are fetched than asked for, because the database has the last
+    word on which of them may be returned and a rejected one must not cost the
+    caller a slot. Returns the chosen chunks, best first. The cost of the
+    answer is set by this limit rather than by how many collections were
+    consulted, so widening an agent's access does not widen what a model is
+    later asked to read.
+
+    Every call is recorded, including the ones that returned nothing and the
+    ones that failed, because the client of this store is an agent and its
+    questions are the only account of what it went looking for.
+    """
+    started = time.monotonic()
+    folder = Folder.objects.filter(pk=folder_id).first() if folder_id is not None else None
+    try:
+        results, consulted = run(agent, query, limit, folder_id, folder)
+    except Exception:
+        record(agent, query, limit, folder, source, started, results=[], consulted=0, failed=True)
+        raise
+    record(agent, query, limit, folder, source, started, results=results, consulted=consulted)
+    return results
+
+
+def run(agent, query, limit, folder_id, folder):
+    """Search what the agent reaches and return the hits with how many
+    collections were consulted.
+
+    Takes the agent, the query, the limit, the folder id the caller named and
+    the folder it resolved to, which is None when nothing of that id exists.
+    Returns a (results, collections consulted) pair.
     """
     access = resolve_access(agent)
     if folder_id is not None:
-        access = narrow_to_folder(access, Folder.objects.filter(pk=folder_id).first())
+        access = narrow_to_folder(access, folder)
     if not access:
-        return []
+        return [], 0
     collections = {
         collection.pk: collection
         for collection in Collection.objects.filter(pk__in=access.keys())
@@ -43,7 +73,34 @@ def search(agent, query, limit, folder_id=None):
         )
         ranked.append([build_result(payload, score, collection) for payload, score in hits])
     pool = fuse(ranked, limit * POOL_FACTOR)
-    return confirm_against_database(pool, access)[:limit]
+    return confirm_against_database(pool, access)[:limit], len(ranked)
+
+
+def record(agent, query, limit, folder, source, started, results, consulted, failed=False):
+    """Write down that an agent asked something and what it got back.
+
+    Takes the agent, the query, the limit asked for, the folder the search was
+    narrowed to, the door it came through, when it started, the results, how
+    many collections were consulted and whether it failed. The agent's name is
+    copied onto the row so that the log still reads as a sentence once the
+    agent has been renamed. A failure to write the record must not cost the
+    caller its answer, so it is logged and swallowed.
+    """
+    try:
+        AgentQuery.objects.create(
+            agent=agent,
+            agent_name=agent.name,
+            query=query,
+            source=source,
+            folder=folder,
+            limit=limit,
+            result_count=len(results),
+            collections_searched=consulted,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            failed=failed,
+        )
+    except Exception:
+        logger.exception("Could not record the query of agent %s", agent.pk)
 
 
 def narrow_to_folder(access, folder):

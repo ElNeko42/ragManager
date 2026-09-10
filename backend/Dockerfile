@@ -11,9 +11,12 @@ RUN apt-get update \
 
 ENV HF_HOME=/models
 
+# Torch is installed on its own so that editing requirements.txt does not
+# fetch a few hundred megabytes of it again.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch
+
 COPY requirements.txt ./
-RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch \
-    && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

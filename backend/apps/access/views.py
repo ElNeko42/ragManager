@@ -1,33 +1,43 @@
 """Endpoints that grant and withdraw agent access."""
 
 from django.shortcuts import get_object_or_404
-from rest_framework import status
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from apps.access.models import Permission, PermissionEffect
 from apps.access.resolver import resolve_folder_effects
-from apps.access.serializers import PermissionSerializer, PermissionUpdateSerializer
+from apps.access.serializers import (
+    PermissionFilterSerializer,
+    PermissionSerializer,
+    PermissionUpdateSerializer,
+)
 from apps.accounts.permissions import IsOwner
 from apps.agents.models import Agent
 from apps.drive.models import Document, Folder
-from apps.common.validation import parse_uuid
+from apps.drive.views import UUID_PATTERN
 
 
-class PermissionListCreateView(APIView):
-    """Lists access rules and grants new ones."""
+class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """Grants access rules, withdraws them and shows what they add up to."""
 
+    queryset = Permission.objects.all()
+    lookup_field = "permission_id"
+    lookup_value_regex = UUID_PATTERN
+    serializer_class = PermissionSerializer
     permission_classes = [IsOwner]
 
-    def get(self, request):
+    def get_queryset(self):
         """Return the access rules, narrowed to one agent when given."""
         permissions = Permission.objects.all()
-        agent_id = request.query_params.get("agent")
-        if agent_id:
-            permissions = permissions.filter(agent_id=parse_uuid(agent_id, "agent"))
-        return Response(PermissionSerializer(permissions, many=True).data)
+        filters = PermissionFilterSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        agent = filters.validated_data.get("agent")
+        if agent is not None:
+            permissions = permissions.filter(agent_id=agent)
+        return permissions
 
-    def post(self, request):
+    def create(self, request, *args, **kwargs):
         """Grant or block one agent over one folder or one document.
 
         Takes the agent, the target and the effect. Rules are inherited down
@@ -39,33 +49,27 @@ class PermissionListCreateView(APIView):
         permission = serializer.save()
         return Response(PermissionSerializer(permission).data, status=status.HTTP_201_CREATED)
 
-
-class PermissionDetailView(APIView):
-    """Flips and removes a single access rule."""
-
-    permission_classes = [IsOwner]
-
-    def patch(self, request, permission_id):
+    def partial_update(self, request, *args, **kwargs):
         """Flip a rule between allowing and blocking its target."""
-        permission = get_object_or_404(Permission, pk=permission_id)
+        permission = self.get_object()
         serializer = PermissionUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         permission.effect = serializer.validated_data["effect"]
         permission.save(update_fields=["effect"])
         return Response(PermissionSerializer(permission).data)
 
-    def delete(self, request, permission_id):
+    def destroy(self, request, *args, **kwargs):
         """Remove a rule, leaving the target to whatever it inherits."""
-        get_object_or_404(Permission, pk=permission_id).delete()
+        self.get_object().delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-
-class EffectiveAccessView(APIView):
-    """Shows what an agent actually ends up seeing, rules resolved."""
-
-    permission_classes = [IsOwner]
-
-    def get(self, request, agent_id):
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path=f"effective/(?P<agent_id>{UUID_PATTERN})",
+        url_name="effective",
+    )
+    def effective(self, request, agent_id=None):
         """Return the resolved permission of every folder for one agent.
 
         Takes the agent. Rules are inherited and the most specific one wins, so
@@ -73,6 +77,10 @@ class EffectiveAccessView(APIView):
         reaches it; this walks the tree and reports the outcome, marking which
         folders decided it themselves and which inherited it. Document rules
         are listed too, since they override whatever their folder resolved to.
+
+        The whole tree is reported, unpaged: this is the picture the owner
+        checks a grant against, and a page of it would show an agent reaching
+        a folder while hiding the deny written under it.
         """
         agent = get_object_or_404(Agent, pk=agent_id)
         effects = resolve_folder_effects(agent)

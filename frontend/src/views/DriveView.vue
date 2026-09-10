@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import AppShell from '../components/layout/AppShell.vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
 import BaseButton from '../components/ui/BaseButton.vue'
+import BaseIcon from '../components/ui/BaseIcon.vue'
 import BaseField from '../components/ui/BaseField.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
@@ -21,6 +22,7 @@ import FolderCard from '../components/drive/FolderCard.vue'
 import FolderTree from '../components/drive/FolderTree.vue'
 import UploadZone from '../components/drive/UploadZone.vue'
 import { useAction } from '../composables/useAction'
+import { useMediaQuery } from '../composables/useMediaQuery'
 import { useDriveStore } from '../stores/drive'
 import type { Folder } from '../api/drive'
 
@@ -29,6 +31,10 @@ const router = useRouter()
 const drive = useDriveStore()
 
 const view = ref('grid')
+const narrow = useMediaQuery('(max-width: 900px)')
+const treeOpen = ref(false)
+const dragging = ref(false)
+let hovering = 0
 const renamingFolder = ref<Folder | null>(null)
 const folderDraft = ref('')
 const deletingFolder = ref<Folder | null>(null)
@@ -271,33 +277,149 @@ function submitFolder(): void {
   })
 }
 
-onMounted(() => void run(() => drive.start()))
-onUnmounted(() => drive.stop())
+/**
+ * Reports whether what is being dragged is files rather than page furniture.
+ *
+ * Dragging the selection of a name, or a link, or a folder row also fires
+ * these events, and none of them are something to upload.
+ */
+function carriesFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
+
+/**
+ * Counts the drag into the page, so the invitation appears once.
+ *
+ * A drag crossing the page raises an enter for every element it passes over
+ * and a leave for every element it passes off, so the two are counted against
+ * each other rather than treated as arrival and departure.
+ */
+function onDragEnter(event: DragEvent): void {
+  if (!carriesFiles(event)) {
+    return
+  }
+  hovering += 1
+  dragging.value = true
+}
+
+/**
+ * Tells the browser this page will take the files.
+ *
+ * Without this the drop never happens: a page that does not answer the drag
+ * is a page the browser hands the file to itself, replacing the panel with
+ * whatever was dropped.
+ */
+function onDragOver(event: DragEvent): void {
+  if (!carriesFiles(event)) {
+    return
+  }
+  event.preventDefault()
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+/**
+ * Counts the drag back out again, and gives up the invitation at zero.
+ */
+function onDragLeave(event: DragEvent): void {
+  if (!carriesFiles(event)) {
+    return
+  }
+  hovering = Math.max(0, hovering - 1)
+  if (hovering === 0) {
+    dragging.value = false
+  }
+}
+
+/**
+ * Clears the invitation when a drag ends without ever being dropped.
+ */
+function onDragEnd(): void {
+  hovering = 0
+  dragging.value = false
+}
+
+/**
+ * Takes files dropped anywhere on the page into the folder that is open.
+ */
+function onDrop(event: DragEvent): void {
+  if (!carriesFiles(event)) {
+    return
+  }
+  event.preventDefault()
+  hovering = 0
+  dragging.value = false
+  const files = Array.from(event.dataTransfer?.files ?? [])
+  if (files.length) {
+    void run(() => drive.upload(files))
+  }
+}
+
+onMounted(() => {
+  void run(() => drive.start())
+  window.addEventListener('dragenter', onDragEnter)
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('dragleave', onDragLeave)
+  window.addEventListener('drop', onDrop)
+  window.addEventListener('dragend', onDragEnd)
+})
+
+onUnmounted(() => {
+  drive.stop()
+  window.removeEventListener('dragenter', onDragEnter)
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('dragleave', onDragLeave)
+  window.removeEventListener('drop', onDrop)
+  window.removeEventListener('dragend', onDragEnd)
+})
 </script>
 
 <template>
   <AppShell>
     <UnsavedGuard :dirty="dirty" />
+
+    <div v-if="dragging" class="catcher" aria-hidden="true">
+      <div class="invitation">
+        <BaseIcon name="upload" :size="32" />
+        <strong>{{ t('drive.dropAnywhere') }}</strong>
+        <span class="target">{{ t('drive.dropInto', { name: folderName }) }}</span>
+      </div>
+    </div>
+
     <div class="drive">
       <aside class="sidebar">
         <header class="sidehead">
-          <span class="eyebrow">{{ t('drive.tree') }}</span>
+          <button
+            v-if="narrow"
+            type="button"
+            class="fold"
+            :aria-expanded="treeOpen"
+            aria-controls="folder-tree"
+            @click="treeOpen = !treeOpen"
+          >
+            <BaseIcon :name="treeOpen ? 'chevronDown' : 'chevronRight'" :size="16" />
+            <span class="eyebrow">{{ t('drive.tree') }}</span>
+          </button>
+          <span v-else class="eyebrow">{{ t('drive.tree') }}</span>
           <button type="button" class="add" :title="t('drive.newFolder')" @click="startAddFolder">
-            +
+            <BaseIcon name="plus" :size="18" />
           </button>
         </header>
 
-        <FolderTree
-          :folders="drive.folders"
-          :selected="drive.folderId"
-          @open="(id) => run(() => drive.open(id))"
-        />
+        <div id="folder-tree" :class="['folding', { folded: narrow && !treeOpen }]">
+          <FolderTree
+            :folders="drive.folders"
+            :selected="drive.folderId"
+            @open="(id) => run(() => drive.open(id))"
+          />
 
-        <div class="rule" />
+          <div class="rule" />
 
-        <div class="collection">
-          <span class="eyebrow">{{ t('drive.collection') }}</span>
-          <span class="chip">{{ drive.collectionName }}</span>
+          <div class="collection">
+            <span class="eyebrow">{{ t('drive.collection') }}</span>
+            <span class="chip">{{ drive.collectionName }}</span>
+          </div>
         </div>
       </aside>
 
@@ -312,9 +434,11 @@ onUnmounted(() => drive.stop())
                   variant="quiet"
                   @click="startRenameFolder(drive.current)"
                 >
+                  <BaseIcon name="pencil" :size="15" />
                   {{ t('drive.renameFolder') }}
                 </BaseButton>
                 <BaseButton variant="quiet" @click="openPermissions(drive.current)">
+                  <BaseIcon name="shield" :size="15" />
                   {{ t('drive.folderPermissions') }}
                 </BaseButton>
                 <BaseButton
@@ -322,6 +446,7 @@ onUnmounted(() => drive.stop())
                   variant="quiet"
                   @click="deletingFolder = drive.current"
                 >
+                  <BaseIcon name="trash" :size="15" />
                   {{ t('drive.deleteFolder') }}
                 </BaseButton>
               </template>
@@ -341,7 +466,10 @@ onUnmounted(() => drive.stop())
         <template v-if="subfolders.length">
           <div class="section">
             <span class="eyebrow">{{ t('drive.subfolders') }}</span>
-            <BaseButton @click="startAddFolder">{{ t('drive.newFolder') }}</BaseButton>
+            <BaseButton @click="startAddFolder">
+              <BaseIcon name="plus" :size="16" />
+              {{ t('drive.newFolder') }}
+            </BaseButton>
           </div>
           <div class="cards">
             <FolderCard
@@ -393,6 +521,7 @@ onUnmounted(() => drive.stop())
 
       <DocumentDetail
         v-if="drive.selected"
+        class="pane-detail"
         :document="drive.selected"
         :path="selectedPath"
         :collection="drive.collectionName"
@@ -402,7 +531,7 @@ onUnmounted(() => drive.stop())
         @move="askMove"
         @remove="run(() => drive.remove(drive.selected!.document_id))"
       />
-      <aside v-else class="placeholder">
+      <aside v-else class="placeholder pane-detail">
         <span class="eyebrow">{{ t('drive.detail') }}</span>
         <p>{{ t('drive.pickDocument') }}</p>
       </aside>
@@ -489,6 +618,50 @@ onUnmounted(() => drive.stop())
 </template>
 
 <style scoped>
+/*
+ * The whole page is the drop target, so the whole page says so. It never takes
+ * the pointer: the drop is read from the window, and a sheet that swallowed
+ * events would take it from the elements underneath.
+ */
+.catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--rm-space-5);
+  background: var(--rm-bg);
+  background: color-mix(in srgb, var(--rm-bg) 78%, transparent);
+  pointer-events: none;
+}
+
+.invitation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--rm-space-2);
+  padding: var(--rm-space-6) var(--rm-space-6);
+  border: 3px dashed var(--rm-border);
+  border-radius: var(--rm-radius);
+  background: var(--rm-panel);
+  box-shadow: var(--rm-lift) var(--rm-lift) 0 var(--rm-shadow);
+  text-align: center;
+}
+
+.invitation strong {
+  font-family: var(--rm-font-display);
+  font-size: 20px;
+}
+
+.target {
+  font-family: var(--rm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rm-muted);
+  overflow-wrap: anywhere;
+}
+
 .buttons {
   display: flex;
   justify-content: flex-end;
@@ -499,9 +672,22 @@ onUnmounted(() => drive.stop())
 
 .drive {
   display: grid;
-  grid-template-columns: minmax(0, 210px) minmax(320px, 1fr) minmax(0, 320px);
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr) minmax(0, 330px);
+  grid-template-areas: "tree main detail";
   gap: 18px;
   align-items: start;
+}
+
+.sidebar {
+  grid-area: tree;
+}
+
+.content {
+  grid-area: main;
+}
+
+.pane-detail {
+  grid-area: detail;
 }
 
 .sidebar,
@@ -522,6 +708,29 @@ onUnmounted(() => drive.stop())
   align-items: center;
   justify-content: space-between;
   gap: var(--rm-space-2);
+  flex-wrap: wrap;
+}
+
+/* Only built where the tree can actually fold, which is the narrow layout. */
+.fold {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--rm-ink);
+  cursor: pointer;
+}
+
+.folded {
+  display: none;
+}
+
+.folding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-space-3);
 }
 
 .eyebrow {
@@ -535,14 +744,13 @@ onUnmounted(() => drive.stop())
 .add {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  flex: none;
+  width: 30px;
+  height: 30px;
   border: var(--rm-border-width) solid var(--rm-border);
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--rm-lime);
-  color: #17131f;
-  font-size: 14px;
-  font-weight: 700;
+  color: var(--rm-ink-on-bright);
   cursor: pointer;
 }
 
@@ -624,11 +832,19 @@ h2 {
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
   gap: var(--rm-space-4);
 }
 
+/*
+ * The header and the rows are separate grids, so the columns only line up if
+ * both are told the same track widths: with `auto` they each sized to their own
+ * contents and the headings drifted away from the switches they name, by a
+ * whole word in Spanish. The tracks are declared once here and read by
+ * DocumentRow.
+ */
 .table {
+  --rm-doc-cols: minmax(80px, 1fr) 96px 120px;
   background: var(--rm-panel);
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: var(--rm-radius);
@@ -638,7 +854,7 @@ h2 {
 
 .thead {
   display: grid;
-  grid-template-columns: minmax(80px, 1fr) auto auto;
+  grid-template-columns: var(--rm-doc-cols);
   gap: var(--rm-space-3);
   padding: 9px var(--rm-space-4);
   background: var(--rm-ink);
@@ -656,9 +872,49 @@ h2 {
   color: var(--rm-muted);
 }
 
-@media (max-width: 1100px) {
+/*
+ * Three columns become two when the detail pane no longer has room to be a
+ * column, and one when the tree stops being a margin and becomes a section of
+ * its own. Below that the tree starts folded: on a phone the point of opening
+ * the panel is the documents, and a full tree would push them off the screen.
+ */
+@media (max-width: 1240px) {
   .drive {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+    grid-template-areas:
+      "tree main"
+      "detail detail";
+  }
+}
+
+@media (max-width: 900px) {
+  .drive {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "tree"
+      "main"
+      "detail";
+    gap: var(--rm-space-3);
+  }
+
+  .head {
+    padding: var(--rm-space-3);
+  }
+
+  .sidebar,
+  .placeholder {
+    padding: var(--rm-space-3);
+  }
+}
+
+@media (max-width: 600px) {
+  .table {
+    --rm-doc-cols: minmax(0, 1fr) 56px 104px;
+  }
+
+  .thead {
+    gap: var(--rm-space-2);
+    padding: 9px var(--rm-space-3);
   }
 }
 </style>

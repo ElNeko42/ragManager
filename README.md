@@ -13,12 +13,20 @@ people.
 
 Under construction. The management API, authentication, the ingestion
 pipeline, the permission resolver, the search endpoint and the MCP server
-work, and the web panel covers documents, agents and tokens, permissions and
-collections.
+work. The web panel covers documents and folders, agents and their tokens,
+permissions, and registering the embedding models that index it all.
 
 An external agent can reach the store either through the MCP endpoint or by
 calling the search endpoint directly with its token. Both doors resolve
 permissions the same way, from the same resolver.
+
+The ingestion queue retries a dependency that was unreachable, the listings
+are paged, every agent query is written down, and the chunk size is a setting
+of each collection rather than a constant.
+
+What it does not have yet: there are no tests in front of the panel, and the
+panel does not yet surface the query log or the reprocess button the API
+offers.
 
 ## Stack
 
@@ -119,19 +127,140 @@ If any of those ports is already taken on the host, change the matching
 `*_HOST_PORT` value in `.env`. Only the published side moves; the containers
 keep talking to each other on their standard ports.
 
-## Embedding providers
+## How text is split
+
+A document is embedded in pieces, and the size of a piece is the setting that
+decides most of what an agent ends up reading. Every model reads only so many
+tokens of a piece and silently ignores the rest, so a chunk longer than the
+model reads is stored and returned in full while only its opening influenced
+the vector: the passage that answers the question is there, and it scores
+badly. The default model here reads 256 tokens, which is roughly 200 words.
+
+`CHUNK_WORDS` and `CHUNK_OVERLAP_WORDS` set the instance default. A collection
+may name its own size, which is where it belongs, since the limit is the
+model's rather than the instance's. Chunks are closed at a paragraph or a
+sentence boundary near the target rather than at an exact word count, because
+a chunk that begins mid sentence embeds as a fragment. The overlap is what
+keeps an idea cut in half by a boundary whole in one of the two neighbours.
+
+Changing the size does not re-split what is already indexed. Documents keep
+the chunks they were vectorised with until each one is queued again, which the
+reprocess route does:
+
+```sh
+curl -X POST -b cookies.txt -H "X-CSRFToken: $TOKEN" \
+  https://your.host/api/documents/<id>/reprocess/
+```
+
+## When something in the queue is down
+
+A run that fails because a dependency could not be reached is queued again
+after a growing wait, capped by `INGESTION_RETRY_MAX_BACKOFF_SECONDS` and
+given up on after `INGESTION_MAX_RETRIES` attempts. A vector store restarting
+for a minute therefore costs a document nothing.
+
+A run that fails because of the file itself is not retried: a format with no
+extractor, a model whose width disagrees with the collection, a rejected
+credential. Those fail identically on every attempt, so the document is marked
+failed with the reason, and queueing it again is a deliberate act once the
+cause is fixed. The attempts a run took are kept on the job.
+
+Before registering a model, or after changing a provider, ask it directly
+rather than finding out through a failed job hours later:
+
+```sh
+docker compose exec backend python manage.py check_embeddings <collection>
+```
+
+It embeds two sentences, reports the width and the round trip, and says
+whether a failure is something to retry or something to correct.
+
+## Paged listings
+
+`/api/documents/`, `/api/folders/`, `/api/collections/`, `/api/agents/`,
+`/api/permissions/` and `/api/search/log/` answer with `count`, `next`,
+`previous` and `results`. `PAGE_SIZE` sets the default and `MAX_PAGE_SIZE` the
+ceiling a caller may ask for with `?page_size=`. The panel follows the `next`
+links until it has the whole listing, because it draws a tree and a folder
+rather than a page.
+
+## What agents searched for
+
+Every search is recorded, through either door: which agent asked, what it
+asked, whether it was narrowed to a folder, how many passages came back, how
+long it took and whether it failed. A search that returned nothing is recorded
+too, since a run of empty answers is usually the first sign that a permission
+is missing rather than that the store is empty.
+
+```sh
+curl -b cookies.txt "https://your.host/api/search/log/?agent=<id>"
+```
+
+The log is the owner's. An agent that could read it would learn what every
+other agent was asked to look into.
+
+## Embedding models
 
 A collection names the model that produced its vectors. `local` runs a
 sentence-transformers model inside the container and needs no account
 anywhere; `api` points at any endpoint that speaks the OpenAI embeddings
 shape, which covers most hosted providers as well as a model you run yourself.
+Registering one is done in the panel, under Collections.
+
+Vectors of two models cannot be compared, so a model belongs to one collection
+and one only. Registering a model a collection already holds is refused, in the
+serializer and on the table, and the refusal names the collection that has it.
+
+### Where the credential lives
 
 `EMBEDDING_API_KEY` is the shared credential. A collection can carry its own by
 setting `EMBEDDING_API_KEY_<NAME>` — the collection name upper cased with
 hyphens turned into underscores, so `openai-large` reads
 `EMBEDDING_API_KEY_OPENAI_LARGE`. Give each collection its own key when they
 live at different providers, so one provider's credential is never sent to
-another.
+another. The panel names the variable a collection will look for while you
+register it. Keys stay in the environment because the row is readable from the
+database; adding one means restarting the backend and the worker.
+
+### Which model indexes which folder
+
+| Folder | Model |
+| --- | --- |
+| The root | The base model of the instance, chosen under Collections |
+| Directly under the root | Chosen when the folder is created |
+| Anywhere deeper | Inherited from its parent, and not offered as a choice |
+
+A folder keeps the model it was created with. Inheriting only at creation is
+what keeps one branch searchable as one thing: a subtree split across two
+models could not be ranked against itself.
+
+Changing the base model re-indexes the documents sitting directly in the root,
+because what they had indexed belonged to the model they are leaving. Folders
+below the root are untouched, so a branch never changes model under its own
+documents. Moving one document into a folder on another model has the same
+cost, and the panel says so before it happens.
+
+## The panel
+
+Everything below is done by the owner, signed in with a session; agents never
+reach any of it.
+
+| Screen | What it does |
+| --- | --- |
+| Documents | The folder tree, uploads, renaming, moving and deleting, and the switch that makes a document readable by agents |
+| Agents | Registering agents, issuing and revoking tokens, and jumping to what one of them can reach |
+| Permissions | Granting and blocking one agent over one folder, with the resolved tree beside the rules |
+| Collections | Registering embedding models, choosing the base one, and seeing which folders use each |
+| Status | Whether PostgreSQL, Redis, Qdrant and the object storage answer |
+
+A token is shown once, when it is issued, and never again. Deleting a folder
+takes everything below it, deleting a document takes its file, and revoking a
+token takes effect on the next call: each of those asks first and says what is
+about to be lost. A form with something typed into it warns before a reload or
+a step backwards throws it away.
+
+The panel is translated, and the language is chosen in the header. Both
+locales are complete; a key present in one and missing from the other is a bug.
 
 ## Running behind a reverse proxy
 
@@ -248,16 +377,57 @@ docker compose exec backend python manage.py test apps
 
 The suite covers the permission resolver and the pieces that turn a resolved
 permission into an answer, which is where a mistake would hand an agent a
-document it was never granted. It touches only PostgreSQL, so it runs in under
-a second and needs no vector store, object store or embedding model.
+document it was never granted. It also covers the MCP transport, the rules
+about which folder may choose which embedding model, what deleting a folder
+takes with it, how text is split, and which failures the queue tries again.
+It touches only PostgreSQL, so it runs in seconds and needs no vector store,
+object store or embedding model.
+
+### Against a real provider
+
+The API provider is otherwise tested against a stub, which proves this code
+does what the project believes the protocol to be and nothing about whether
+that belief is right. Point these at any OpenAI compatible embeddings endpoint
+to check it against a service that actually implements it:
+
+```sh
+docker compose exec \
+  -e LIVE_EMBEDDING_BASE_URL=http://your-endpoint/v1 \
+  -e LIVE_EMBEDDING_MODEL=<the model to ask for> \
+  -e LIVE_EMBEDDING_VECTOR_SIZE=<its width> \
+  -e LIVE_EMBEDDING_API_KEY=<a key, if it wants one> \
+  backend python manage.py test apps.ingestion.test_live
+```
+
+They are skipped when nothing is configured. Worth knowing, because these
+tests found it: an endpoint serving a single model ignores the model name and
+answers with the model it has, so a collection can be registered under a name
+nobody serves and still work. The width check is what catches that.
+
+There are no tests in front of the panel yet. Its types are checked, and the
+two locales are compared for keys that exist in one and not the other:
+
+```sh
+cd frontend && npx vue-tsc --noEmit
+```
 
 ## Project layout
 
 ```
 backend/            Django project
   config/           settings, routing, Celery application, health probes
+  apps/accounts/    the owner and the session they sign in with
+  apps/agents/      agents, their tokens and the bearer authentication
+  apps/drive/       collections, folders, documents and the storage behind them
+  apps/access/      permission rules and the resolver that reads them
+  apps/ingestion/   extraction, chunking, embeddings and the Qdrant client
+  apps/search/      one query against every collection an agent may read
+  apps/common/      the few helpers more than one app needs: paging, fields
   apps/mcp/         the MCP endpoint: JSON-RPC envelope, tools, transport
 frontend/           Vue 3 single page application
+  src/components/ui/   the pieces every screen is built from
+  src/composables/     behaviour shared between screens
+  src/stores/          Pinia stores, one per area of the panel
 docker-compose.yml  postgres, redis, minio, backend, worker, frontend
 ```
 

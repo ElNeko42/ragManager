@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import BaseAlert from '../ui/BaseAlert.vue'
 import BaseButton from '../ui/BaseButton.vue'
+import BaseIcon from '../ui/BaseIcon.vue'
 import BaseInput from '../ui/BaseInput.vue'
 import BaseSwitch from '../ui/BaseSwitch.vue'
 import BaseSelect from '../ui/BaseSelect.vue'
@@ -161,13 +162,20 @@ function commitRename(): void {
 
     <div class="actions">
       <a class="download" :href="contentUrl(document.document_id)" download>
+        <BaseIcon name="download" :size="16" />
         {{ t('drive.download') }}
       </a>
-      <BaseButton @click="renaming = true">{{ t('drive.rename') }}</BaseButton>
+      <BaseButton @click="renaming = true">
+        <BaseIcon name="pencil" :size="16" />
+        {{ t('drive.rename') }}
+      </BaseButton>
     </div>
 
     <div class="danger">
-      <BaseButton variant="quiet" @click="confirming = true">{{ t('drive.delete') }}</BaseButton>
+      <BaseButton variant="quiet" @click="confirming = true">
+        <BaseIcon name="trash" :size="15" />
+        {{ t('drive.delete') }}
+      </BaseButton>
     </div>
 
     <ConfirmDialog
@@ -191,7 +199,6 @@ function commitRename(): void {
   flex-direction: column;
   gap: 6px;
 }
-
 
 .detail {
   display: flex;
@@ -317,18 +324,19 @@ dd {
 .download {
   display: inline-flex;
   align-items: center;
+  gap: var(--rm-space-2);
   padding: 10px var(--rm-space-4);
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: var(--rm-radius-sm);
   background: var(--rm-cyan);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-weight: 700;
   text-decoration: none;
   box-shadow: 4px 4px 0 var(--rm-shadow);
 }
 
 .download:hover {
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   transform: translate(2px, 2px);
   box-shadow: 2px 2px 0 var(--rm-shadow);
 }
@@ -341,6 +349,4 @@ dd {
   padding-top: var(--rm-space-2);
   border-top: var(--rm-border-width) dotted var(--rm-line);
 }
-
-
 </style>

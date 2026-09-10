@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.test import TestCase
@@ -532,3 +533,166 @@ class BaseModelTests(TestCase):
         ingestion.discard_vectors.assert_not_called()
         self.document.refresh_from_db()
         self.assertEqual(self.document.processing_status, ProcessingStatus.READY)
+
+
+class PaginationTests(TestCase):
+    """What a listing does once an instance holds more than a screenful."""
+
+    def setUp(self):
+        """Sign in as the owner with a folder holding several documents."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="pw-8x-forest"
+        )
+        self.client.force_login(self.owner)
+        self.root = Folder.objects.get(parent__isnull=True)
+        for index in range(12):
+            Document.objects.create(
+                folder=self.root,
+                name=f"file-{index:02d}.txt",
+                content_type="text/plain",
+                size_bytes=1,
+                storage_key=f"documents/file-{index}",
+            )
+
+    def test_a_listing_says_how_many_there_are_in_total(self):
+        """A page with no count leaves the panel unable to draw the next one."""
+        response = self.client.get("/api/documents/", secure=True)
+        self.assertEqual(response.json()["count"], 12)
+
+    def test_a_listing_can_be_cut_into_pages(self):
+        """Thousands of documents in one answer is what this is here to stop."""
+        response = self.client.get("/api/documents/?page_size=5", secure=True)
+        self.assertEqual(len(response.json()["results"]), 5)
+
+    def test_a_page_points_at_the_one_after_it(self):
+        """A caller with no link to the next page cannot walk the listing."""
+        response = self.client.get("/api/documents/?page_size=5", secure=True)
+        self.assertIsNotNone(response.json()["next"])
+
+    def test_the_last_page_points_nowhere_further(self):
+        """Walking the pages has to end, or the panel asks forever."""
+        response = self.client.get("/api/documents/?page=3&page_size=5", secure=True)
+        self.assertIsNone(response.json()["next"])
+
+    def test_a_page_beyond_the_end_is_not_an_empty_success(self):
+        """Answering a page that does not exist with nothing hides a bug."""
+        response = self.client.get("/api/documents/?page=99", secure=True)
+        self.assertEqual(response.status_code, 404)
+
+    def test_a_caller_cannot_ask_for_the_whole_table_at_once(self):
+        """A ceiling is what keeps the page size from undoing the paging."""
+        response = self.client.get("/api/documents/?page_size=100000", secure=True)
+        self.assertLessEqual(len(response.json()["results"]), settings.MAX_PAGE_SIZE)
+
+    def test_the_folder_listing_is_paged_too(self):
+        """The tree grows the same way the documents do."""
+        response = self.client.get("/api/folders/", secure=True)
+        self.assertIn("results", response.json())
+
+    def test_a_malformed_folder_filter_is_a_bad_request(self):
+        """A value that is not an identifier must not reach the query layer."""
+        response = self.client.get("/api/documents/?folder=nonsense", secure=True)
+        self.assertEqual(response.status_code, 400)
+
+    def test_an_empty_folder_filter_means_no_filter(self):
+        """A panel writes the parameter whether or not it holds anything."""
+        response = self.client.get("/api/documents/?folder=", secure=True)
+        self.assertEqual(response.json()["count"], 12)
+
+
+class ReprocessEndpointTests(TestCase):
+    """Putting a document that failed back in the queue."""
+
+    def setUp(self):
+        """Sign in as the owner with a document whose last run failed."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="pw-8x-forest"
+        )
+        self.client.force_login(self.owner)
+        self.root = Folder.objects.get(parent__isnull=True)
+        self.document = Document.objects.create(
+            folder=self.root,
+            name="scan.pdf",
+            content_type="application/pdf",
+            size_bytes=10,
+            storage_key="documents/scan.pdf",
+            is_agent_active=True,
+            processing_status=ProcessingStatus.FAILED,
+        )
+
+    def reprocess(self):
+        """Ask for the document to be queued again."""
+        return self.client.post(f"/api/documents/{self.document.pk}/reprocess/", secure=True)
+
+    @patch("apps.drive.services.ingestion")
+    def test_a_failed_document_can_be_queued_again(self, ingestion):
+        """A run that failed for good is otherwise failed forever."""
+        self.assertEqual(self.reprocess().status_code, 200)
+        ingestion.enqueue.assert_called_once()
+
+    @patch("apps.drive.services.ingestion")
+    def test_a_document_no_agent_may_read_is_refused(self, ingestion):
+        """Indexing what nothing is allowed to search spends the queue for nothing."""
+        self.document.is_agent_active = False
+        self.document.save(update_fields=["is_agent_active"])
+        self.assertEqual(self.reprocess().status_code, 409)
+        ingestion.enqueue.assert_not_called()
+
+    def test_a_signed_out_visitor_cannot_queue_anything(self):
+        """The queue is the owner's to spend, not a visitor's."""
+        self.client.logout()
+        self.assertEqual(self.reprocess().status_code, 401)
+
+
+class CollectionChunkingEndpointTests(TestCase):
+    """The chunk size an owner registers a collection with."""
+
+    def setUp(self):
+        """Sign in as the owner."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="pw-8x-forest"
+        )
+        self.client.force_login(self.owner)
+
+    def register(self, **extra):
+        """Register a collection, with whatever chunk settings are given."""
+        payload = {
+            "name": "sized",
+            "provider": "local",
+            "model_name": "some/model",
+            "vector_size": 384,
+        }
+        payload.update(extra)
+        return self.client.post(
+            "/api/collections/", payload, content_type="application/json", secure=True
+        )
+
+    def test_a_collection_may_name_the_size_its_text_is_split_into(self):
+        """Every model reads a different amount, so the size belongs to it."""
+        response = self.register(chunk_words=150, chunk_overlap_words=30)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["chunk_words"], 150)
+
+    def test_a_collection_naming_no_size_leaves_it_to_the_instance(self):
+        """One default is what keeps the form short for the common case."""
+        self.assertIsNone(self.register().json()["chunk_words"])
+
+    def test_an_overlap_as_long_as_the_chunk_is_refused(self):
+        """Repeating every chunk whole doubles the store and gains nothing."""
+        response = self.register(chunk_words=100, chunk_overlap_words=100)
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_chunk_too_short_to_mean_anything_is_refused(self):
+        """A chunk of three words carries no context for a model to embed."""
+        self.assertEqual(self.register(chunk_words=3).status_code, 400)
+
+    def test_the_size_can_be_changed_afterwards(self):
+        """The size only decides how the next document is split."""
+        collection = Collection.objects.get(pk=self.register().json()["collection_id"])
+        response = self.client.patch(
+            f"/api/collections/{collection.pk}/",
+            {"chunk_words": 120},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(response.json()["chunk_words"], 120)

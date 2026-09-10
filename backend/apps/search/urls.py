@@ -1,7 +1,10 @@
-"""Routes for the search endpoint."""
+"""Routes for the search endpoint and its record."""
 
-from django.urls import path
+from rest_framework.routers import SimpleRouter
 
-from apps.search import views
+from apps.search.views import SearchViewSet
 
-urlpatterns = [path("", views.SearchView.as_view(), name="search")]
+router = SimpleRouter()
+router.register("", SearchViewSet, basename="search")
+
+urlpatterns = router.urls

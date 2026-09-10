@@ -2,6 +2,7 @@
 
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.db import models
@@ -52,6 +53,8 @@ class Collection(models.Model):
     model_name = models.CharField(max_length=200)
     vector_size = models.PositiveIntegerField()
     is_default = models.BooleanField(default=False)
+    chunk_words = models.PositiveIntegerField(null=True, blank=True)
+    chunk_overlap_words = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -78,11 +81,36 @@ class Collection(models.Model):
                 fields=["provider", "base_url", "model_name"],
                 name="collections_unique_model",
             ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(chunk_words__isnull=True)
+                    | models.Q(chunk_overlap_words__isnull=True)
+                    | models.Q(chunk_overlap_words__lt=models.F("chunk_words"))
+                ),
+                name="collections_overlap_below_chunk",
+            ),
         ]
 
     def __str__(self):
         """Return the collection name."""
         return self.name
+
+    def chunking_plan(self):
+        """Return the (words, overlap) this collection's text is split with.
+
+        Every embedding model reads only so many tokens and silently ignores
+        the rest, so the size of a chunk belongs to the model rather than to
+        the instance: a chunk longer than the model reads is stored and
+        returned in full while only its opening influenced the vector, which
+        is how a passage that answers the query ends up scoring badly. A
+        collection that names no size of its own follows the instance default.
+        """
+        return (
+            self.chunk_words or settings.CHUNK_WORDS,
+            self.chunk_overlap_words
+            if self.chunk_overlap_words is not None
+            else settings.CHUNK_OVERLAP_WORDS,
+        )
 
 
 class Folder(models.Model):

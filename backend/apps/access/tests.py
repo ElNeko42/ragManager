@@ -1,9 +1,11 @@
 """Tests for how an agent's permissions resolve over the folder tree."""
 
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 from apps.access.models import Permission, PermissionEffect
-from apps.access.resolver import resolve_access, resolve_folder_effects
+from apps.access.resolver import reachable_folders, resolve_access, resolve_folder_effects
 from apps.agents.models import Agent
 from apps.drive.models import Collection, Document, Folder
 
@@ -140,3 +142,73 @@ class SearchScopeTests(TestCase):
         )
         Folder.objects.create(name="Elsewhere", parent=self.root, collection=other)
         self.assertNotIn(other.pk, resolve_access(self.agent))
+
+
+class ReachableFolderTests(TestCase):
+    """What an agent reaches, and what working it out is allowed to cost."""
+
+    def setUp(self):
+        """Build a tree with a granted branch and a large one beside it."""
+        self.agent = Agent.objects.create(name="reader")
+        self.root = Folder.objects.get(parent__isnull=True)
+        self.collection = self.root.collection
+        self.granted = Folder.objects.create(
+            name="Granted", parent=self.root, collection=self.collection
+        )
+        self.inside = Folder.objects.create(
+            name="Inside", parent=self.granted, collection=self.collection
+        )
+        self.elsewhere = Folder.objects.create(
+            name="Elsewhere", parent=self.root, collection=self.collection
+        )
+        Permission.objects.create(
+            agent=self.agent, folder=self.granted, effect=PermissionEffect.ALLOW
+        )
+
+    def reached(self):
+        """Return the ids the resolver says this agent reaches."""
+        return {folder_id for folder_id, _ in reachable_folders(self.agent)}
+
+    def test_a_granted_folder_is_reached(self):
+        """The rule the owner wrote is the whole point of the walk."""
+        self.assertIn(self.granted.pk, self.reached())
+
+    def test_everything_under_a_granted_folder_is_reached(self):
+        """Rules are inherited downwards, which is what makes a grant usable."""
+        self.assertIn(self.inside.pk, self.reached())
+
+    def test_a_folder_nobody_granted_is_not_reached(self):
+        """No rule anywhere on the path is a denial, not an oversight."""
+        self.assertNotIn(self.elsewhere.pk, self.reached())
+
+    def test_a_deny_underneath_cuts_the_branch(self):
+        """The most specific rule wins, so a deny beats the allow above it."""
+        Permission.objects.create(
+            agent=self.agent, folder=self.inside, effect=PermissionEffect.DENY
+        )
+        self.assertNotIn(self.inside.pk, self.reached())
+
+    def test_the_root_being_granted_reaches_everything(self):
+        """A grant at the top is how an agent is given the whole store."""
+        Permission.objects.create(
+            agent=self.agent, folder=self.root, effect=PermissionEffect.ALLOW
+        )
+        self.assertIn(self.elsewhere.pk, self.reached())
+
+    def test_folders_the_agent_cannot_reach_cost_nothing(self):
+        """The cost has to follow the grant, not the size of the instance.
+
+        A hundred folders beside the granted branch are a hundred folders this
+        agent will never see, and a resolver that reads them all turns every
+        search into a scan of the whole tree.
+        """
+        with CaptureQueriesContext(connection) as small:
+            self.reached()
+        for index in range(50):
+            Folder.objects.create(
+                name=f"Unrelated {index}", parent=self.elsewhere, collection=self.collection
+            )
+        with CaptureQueriesContext(connection) as large:
+            reached = self.reached()
+        self.assertEqual(len(large.captured_queries), len(small.captured_queries))
+        self.assertEqual(reached, {self.granted.pk, self.inside.pk})

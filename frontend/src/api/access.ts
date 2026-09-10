@@ -1,4 +1,4 @@
-import { request, requestJson } from './client'
+import { request, requestAll, requestJson } from './client'
 
 export type Effect = 'allow' | 'deny'
 
@@ -35,7 +35,7 @@ export interface EffectiveAccess {
  * Returns the rules written for one agent.
  */
 export function listPermissions(agentId: string): Promise<Permission[]> {
-  return request<Permission[]>(`/api/permissions/?agent=${encodeURIComponent(agentId)}`)
+  return requestAll<Permission>(`/api/permissions/?agent=${encodeURIComponent(agentId)}`)
 }
 
 /**

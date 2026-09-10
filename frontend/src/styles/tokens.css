@@ -1,4 +1,6 @@
 :root {
+  color-scheme: light;
+
   --rm-bg: #ece9f7;
   --rm-dot: #cfc8ec;
   --rm-panel: #ffffff;
@@ -10,6 +12,7 @@
   --rm-shadow: #17131f;
   --rm-accent: #2f5bd7;
   --rm-accent-ink: #ffffff;
+  --rm-ink-on-bright: #17131f;
   --rm-cyan: #00c2b8;
   --rm-pink: #ff4fa3;
   --rm-lime: #b8f000;
@@ -40,6 +43,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
     --rm-bg: #0e0c17;
     --rm-dot: #221d38;
     --rm-panel: #1a1626;
@@ -51,6 +56,7 @@
     --rm-shadow: #000000;
     --rm-accent: #3a5fd9;
     --rm-accent-ink: #ffffff;
+    --rm-ink-on-bright: #17131f;
     --rm-cyan: #37e6dc;
     --rm-pink: #ff77bb;
     --rm-lime: #c8ff4d;
@@ -65,6 +71,8 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
+
   --rm-bg: #0e0c17;
   --rm-dot: #221d38;
   --rm-panel: #1a1626;
@@ -76,6 +84,7 @@
   --rm-shadow: #000000;
   --rm-accent: #3a5fd9;
   --rm-accent-ink: #ffffff;
+  --rm-ink-on-bright: #17131f;
   --rm-cyan: #37e6dc;
   --rm-pink: #ff77bb;
   --rm-lime: #c8ff4d;

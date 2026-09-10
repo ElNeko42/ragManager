@@ -128,7 +128,7 @@ onMounted(() => {
           />
         </section>
 
-        <aside v-if="store.folder" class="pane">
+        <aside v-if="store.folder" class="pane verdictpane">
           <span class="eyebrow">{{ t('permissions.folderCard') }}</span>
           <h3>{{ folderName }}</h3>
           <p class="path">{{ breadcrumb }}</p>
@@ -213,7 +213,7 @@ h2 {
   border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 999px;
   background: var(--rm-lime);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   font-family: var(--rm-font-mono);
   font-size: 11px;
   letter-spacing: 0.1em;
@@ -274,7 +274,7 @@ h2 {
 .pick.on {
   border-color: var(--rm-border);
   background: var(--rm-pink);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
   box-shadow: 3px 3px 0 var(--rm-shadow);
 }
 
@@ -387,11 +387,25 @@ h3 {
   font-weight: 700;
   cursor: pointer;
   box-shadow: 3px 3px 0 var(--rm-shadow);
+  transition: transform 90ms ease, box-shadow 90ms ease;
+}
+
+/* Pressed into their own shadow, the way every other raised button behaves. */
+.grant:hover:not(:disabled),
+.block:hover:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--rm-shadow);
+}
+
+.grant:active:not(:disabled),
+.block:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--rm-shadow);
 }
 
 .grant {
   background: var(--rm-lime);
-  color: #17131f;
+  color: var(--rm-ink-on-bright);
 }
 
 .block {
@@ -412,9 +426,23 @@ h3 {
   color: var(--rm-muted);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
   .columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
+  }
+
+  .verdictpane {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pane {
+    padding: var(--rm-space-3);
   }
 }
 </style>

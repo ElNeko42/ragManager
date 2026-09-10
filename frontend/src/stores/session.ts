@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-import { readSession, signIn, signOut } from '../api/auth'
-import type { Owner } from '../api/auth'
+import { readSession, signIn, signOut, updateAccount } from '../api/auth'
+import type { AccountChange, Owner } from '../api/auth'
 
 export const useSessionStore = defineStore('session', () => {
   const owner = ref<Owner | null>(null)
@@ -36,6 +36,16 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   /**
+   * Changes the sign in details and keeps the account that comes back.
+   *
+   * The session survives a password change, so nothing else has to happen
+   * here: the address on screen is simply the one the server now holds.
+   */
+  async function changeAccount(change: AccountChange): Promise<void> {
+    owner.value = await updateAccount(change)
+  }
+
+  /**
    * Signs the owner out, forgetting the account even if the server errors.
    */
   async function logOut(): Promise<void> {
@@ -58,5 +68,5 @@ export const useSessionStore = defineStore('session', () => {
     resolved.value = true
   }
 
-  return { owner, resolved, ensureResolved, logIn, logOut, forget }
+  return { owner, resolved, ensureResolved, logIn, changeAccount, logOut, forget }
 })
