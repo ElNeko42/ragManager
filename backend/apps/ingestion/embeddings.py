@@ -1,6 +1,8 @@
 """Turning text into vectors with the model a collection was created for."""
 
+import logging
 import os
+import threading
 
 import httpx
 from django.conf import settings
@@ -8,8 +10,11 @@ from django.conf import settings
 from apps.common import secrets
 from apps.drive.models import PASSAGE, EmbeddingProvider
 
+logger = logging.getLogger(__name__)
+
 API_TIMEOUT_SECONDS = 120
 _loaded_models = {}
+_loading_lock = threading.Lock()
 
 
 class EmbeddingError(Exception):
@@ -26,13 +31,77 @@ def get_local_model(model_name):
 
     Takes the model name. The import happens here rather than at module level
     so that a process which never embeds anything does not pay for loading
-    torch. Returns the loaded model.
+    torch. Loading is serialised, because the web process answers on several
+    threads and two searches arriving together on a cold process would
+    otherwise each load their own copy of the same model, doubling the memory
+    for nothing. Returns the loaded model.
     """
     if model_name not in _loaded_models:
-        from sentence_transformers import SentenceTransformer
+        with _loading_lock:
+            if model_name not in _loaded_models:
+                from sentence_transformers import SentenceTransformer
 
-        _loaded_models[model_name] = SentenceTransformer(model_name)
+                _loaded_models[model_name] = SentenceTransformer(model_name)
     return _loaded_models[model_name]
+
+
+def warm_local_models():
+    """Load every model a registered collection runs in this process.
+
+    Called when a web worker starts, so that the first search after a restart
+    does not spend ten seconds loading a model while the client waits, which
+    is long enough for some connectors to give up on the call. A model that
+    cannot be loaded is logged and skipped rather than failing the worker: the
+    search that needs it will report the failure to the one caller it
+    concerns, and every other collection keeps answering. Returns the names
+    of the models loaded.
+    """
+    from apps.drive.models import Collection
+
+    loaded = []
+    names = (
+        Collection.objects.filter(provider=EmbeddingProvider.LOCAL)
+        .order_by("model_name")
+        .values_list("model_name", flat=True)
+        .distinct()
+    )
+    for model_name in names:
+        try:
+            get_local_model(model_name)
+        except Exception:
+            logger.exception("Could not warm the embedding model %s", model_name)
+        else:
+            loaded.append(model_name)
+    return loaded
+
+
+def warm_up():
+    """Load the local models a search may need before anyone asks for them.
+
+    The first query after a process starts otherwise pays for loading the
+    model, which takes ten seconds on this hardware and is long enough for a
+    connector to give up and ask again. Only models a folder actually points
+    at are loaded, so registering one for later costs nothing until it is
+    used, and a failure here is logged rather than raised because a process
+    that cannot warm up can still serve: it merely pays on the first request
+    instead.
+    """
+    import logging
+
+    from apps.drive.models import Collection
+
+    logger = logging.getLogger(__name__)
+    try:
+        wanted = (
+            Collection.objects.filter(provider=EmbeddingProvider.LOCAL, folders__isnull=False)
+            .values_list("model_name", flat=True)
+            .distinct()
+        )
+        for model_name in wanted:
+            get_local_model(model_name)
+            logger.info("Embedding model %s is loaded", model_name)
+    except Exception:
+        logger.exception("Could not warm up the embedding models; the first request will")
 
 
 def reader_limits(collection):
@@ -82,6 +151,8 @@ def embed_texts(collection, texts, kind=PASSAGE):
         vectors = embed_locally(collection.model_name, texts)
     else:
         vectors = embed_through_api(collection, texts)
+    if len(vectors) != len(texts):
+        raise EmbeddingError(f"Asked for {len(texts)} embeddings and received {len(vectors)}")
     if len(vectors[0]) != collection.vector_size:
         raise EmbeddingError(
             f"The model returned {len(vectors[0])} dimensions but the collection "
@@ -166,4 +237,11 @@ def embed_through_api(collection, texts):
         raise EmbeddingError(
             f"Asked for {len(texts)} embeddings and received {len(payload)}"
         )
-    return [item["embedding"] for item in sorted(payload, key=lambda item: item.get("index", 0))]
+    try:
+        return [
+            item["embedding"] for item in sorted(payload, key=lambda item: item.get("index", 0))
+        ]
+    except (KeyError, TypeError, AttributeError) as error:
+        raise EmbeddingError(
+            f"The embeddings endpoint returned an unexpected body: {error}"
+        ) from error

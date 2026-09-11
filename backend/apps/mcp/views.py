@@ -193,10 +193,20 @@ class McpView(APIView):
         except EmbeddingError as failure:
             return self.tool_failure(f"The embedding model is unavailable: {failure}")
         return {
-            "content": [{"type": "text", "text": json.dumps(payload, indent=2, default=str)}],
+            "content": [{"type": "text", "text": self.render(payload)}],
             "structuredContent": payload,
             "isError": False,
         }
+
+    def render(self, payload):
+        """Write a tool result as the text a model reads.
+
+        The passages are written as they are rather than escaped to ASCII: a
+        store of Spanish documents would otherwise hand every accented letter
+        to the model as six characters of escape sequence, which it has to
+        undo before reading and pays for in tokens on every result.
+        """
+        return json.dumps(payload, indent=2, ensure_ascii=False, default=str)
 
     def tool_failure(self, message):
         """Report a tool that could not do its work, without breaking the call."""

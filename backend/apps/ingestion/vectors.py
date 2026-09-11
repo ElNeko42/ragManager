@@ -1,5 +1,6 @@
 """Gateway to Qdrant, where the chunk text and its vector live."""
 
+import threading
 import uuid
 
 from django.conf import settings
@@ -7,11 +8,32 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 POINT_NAMESPACE = uuid.UUID("6f1d5a7e-8c3b-4f2a-9d61-2b7e4c0a8f35")
+REQUEST_TIMEOUT_SECONDS = 30
+
+_client = None
+_client_lock = threading.Lock()
 
 
 def get_client():
-    """Build a client bound to the configured Qdrant instance."""
-    return QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY, timeout=30)
+    """Return the client bound to the configured Qdrant instance.
+
+    Built once per process and shared afterwards. A search consults every
+    collection an agent reaches and asks each one twice, and Qdrant usually
+    sits behind TLS on another machine: a client built per call pays a fresh
+    handshake for every one of those, which on a warm search was most of the
+    time spent. The client is thread safe, so the workers of one process may
+    all use the same one.
+    """
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = QdrantClient(
+                    url=settings.QDRANT_URL,
+                    api_key=settings.QDRANT_API_KEY,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
+                )
+    return _client
 
 
 def build_point_id(document_id, chunk_index):

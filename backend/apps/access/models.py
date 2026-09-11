@@ -36,6 +36,9 @@ class Permission(models.Model):
 
     class Meta:
         db_table = "permissions"
+        # The panel reads these a page at a time, and a page of an unordered
+        # table can skip a rule or show one twice between two requests.
+        ordering = ["-created_at", "permission_id"]
         constraints = [
             models.CheckConstraint(
                 condition=(

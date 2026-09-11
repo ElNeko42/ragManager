@@ -132,6 +132,18 @@ hosts, or with `*` among them. Development settings refuse to start at all when
 `PUBLIC_HOST` is set, because that combination puts debug tracebacks on a
 public address; `ALLOW_PUBLIC_DEBUG=true` overrides it if you accept that.
 
+Under production settings gunicorn is configured by `backend/gunicorn.conf.py`
+rather than by its defaults, which are one synchronous worker, a thirty second
+timeout and no keep-alive. `WEB_WORKERS` (default 2) and `WEB_THREADS`
+(default 4) set how many requests are answered at once; prefer threads, because
+every worker that has answered a search holds its own copy of each embedding
+model, which is close to a gigabyte of memory per worker with torch loaded.
+`WEB_TIMEOUT_SECONDS` (default 180) has to cover loading a model on a cold
+process. Each worker starts loading the local models of the registered
+collections in the background as soon as it boots, so the first search after a
+restart does not pay for it; `WEB_WARM_MODELS=false` turns that off on a machine
+that would rather pay on first use.
+
 `TRUSTED_PROXY_COUNT` is how many reverse proxies sit in front. It ships as `0`,
 which makes rate limiting count the address the connection came from. Raise it
 to the number of proxies you actually run: setting it higher than that lets a
@@ -504,6 +516,12 @@ identically, so an agent cannot map the tree by probing it.
 Calls that embed a query are metered by the `SEARCH_THROTTLE_RATE` rate; the
 handshake and the tool listing are not, so an agent never spends its allowance
 on connecting.
+
+The endpoint, the two `.well-known` documents and the registration and token
+endpoints answer a browser from any origin, so a client of the transport that
+runs inside one, such as the MCP Inspector, can connect and authorize. Nothing
+there acts on a cookie; the panel's API and the approval screen stay closed to
+every origin but the panel's own.
 
 The endpoint answers each call in the reply to that call, in JSON, and keeps no
 session between calls. It opens no listening stream, which a client discovers

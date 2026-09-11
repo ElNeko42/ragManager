@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from corsheaders.defaults import default_headers as default_cors_headers
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
@@ -130,6 +132,15 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_HTTPONLY = False
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = env_list("DJANGO_CORS_ALLOWED_ORIGINS")
+# The MCP endpoint and the authorization flow answer any origin regardless;
+# see config.cors. These are the headers that transport sends and reads.
+CORS_ALLOW_HEADERS = [
+    *default_cors_headers,
+    "mcp-protocol-version",
+    "mcp-session-id",
+    "last-event-id",
+]
+CORS_EXPOSE_HEADERS = ["WWW-Authenticate", "Mcp-Session-Id", "Mcp-Protocol-Version"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

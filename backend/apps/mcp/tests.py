@@ -456,3 +456,94 @@ class AcceptHeaderTests(TestCase):
             HTTP_AUTHORIZATION=f"Bearer {self.token}",
         )
         self.assertEqual(answer.status_code, 200)
+
+
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
+class ToolTextTests(TestCase):
+    """How a tool result is written for the model that reads it."""
+
+    def setUp(self):
+        """Issue a token for an agent."""
+        self.agent = Agent.objects.create(name="caller")
+        self.token = issue_token(self.agent)[1]
+
+    def test_the_text_a_model_reads_keeps_its_letters(self):
+        """An accented passage arrives as letters, not as escape sequences."""
+        with patch("apps.mcp.tools.service.search", return_value=[{"text": "instalación"}]):
+            answer = self.client.post(
+                "/mcp/",
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "tools/call",
+                        "params": {"name": tools.SEARCH, "arguments": {"query": "q"}},
+                    }
+                ),
+                content_type="application/json",
+                secure=True,
+                HTTP_AUTHORIZATION=f"Bearer {self.token}",
+            ).json()
+        text = answer["result"]["content"][0]["text"]
+        self.assertIn("instalación", text)
+        self.assertNotIn("\\u00f3", text)
+
+
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
+    CORS_ALLOWED_ORIGINS=["https://panel.example"],
+)
+class CrossOriginTests(TestCase):
+    """Which addresses a browser on another site may reach.
+
+    A client of the transport running inside a browser sends a preflight
+    before its first call, and one refused there reports that no server
+    answers. The panel's own API stays closed to sites it does not know.
+    """
+
+    def preflight(self, path):
+        """Ask, from a site this server has never heard of, whether it may post."""
+        return self.client.options(
+            path,
+            secure=True,
+            HTTP_ORIGIN="https://inspector.example",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization,content-type,mcp-protocol-version",
+        )
+
+    def test_the_mcp_endpoint_answers_any_origin(self):
+        """The endpoint is reached with a token, not a cookie, so any site may."""
+        for path in ("/mcp/", "/mcp"):
+            answer = self.preflight(path)
+            self.assertEqual(answer["Access-Control-Allow-Origin"], "https://inspector.example")
+            self.assertIn("mcp-protocol-version", answer["Access-Control-Allow-Headers"])
+
+    def test_the_authorization_flow_answers_any_origin(self):
+        """The documents and the token endpoint are for the client, not the owner."""
+        for path in (
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-authorization-server",
+            "/oauth/register/",
+            "/oauth/token/",
+        ):
+            answer = self.preflight(path)
+            self.assertEqual(
+                answer["Access-Control-Allow-Origin"], "https://inspector.example", path
+            )
+
+    def test_the_challenge_is_readable_across_origins(self):
+        """A refused client reads where to authorize from the challenge header."""
+        answer = self.client.post(
+            "/mcp/", "{}", content_type="application/json", secure=True,
+            HTTP_ORIGIN="https://inspector.example",
+        )
+        self.assertEqual(answer.status_code, 401)
+        self.assertIn("WWW-Authenticate", answer["Access-Control-Expose-Headers"])
+
+    def test_the_panel_api_stays_closed_to_other_sites(self):
+        """The owner's session must not be usable from a site that is not the panel."""
+        for path in ("/api/agents/", "/oauth/authorize/"):
+            answer = self.preflight(path)
+            self.assertFalse(answer.has_header("Access-Control-Allow-Origin"), path)

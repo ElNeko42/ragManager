@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
 from apps.drive.models import PASSAGE, QUERY, Collection, Document, Folder, ProcessingStatus
-from apps.ingestion import chunking, tasks
+from apps.ingestion import chunking, embeddings, tasks
 from apps.ingestion.embeddings import EmbeddingError, embed_texts
 from apps.ingestion.extraction import ExtractionError
 from apps.ingestion.failures import TransientFailure, is_transient
@@ -356,3 +356,29 @@ class StructureTests(TestCase):
                 0,
             )
             self.assertLessEqual(repeated, 20)
+
+
+class WarmModelTests(TestCase):
+    """Loading the models a worker will need before anyone asks."""
+
+    def test_every_local_model_is_loaded_once(self):
+        """Two collections sharing a model must not load it twice."""
+        default = Collection.objects.get(is_default=True)
+        Collection.objects.create(
+            name="api-one",
+            provider="api",
+            base_url="https://embeddings.example/v1",
+            model_name="remote-model",
+            vector_size=8,
+        )
+        with patch("apps.ingestion.embeddings.get_local_model") as load:
+            loaded = embeddings.warm_local_models()
+        self.assertEqual(loaded, [default.model_name])
+        load.assert_called_once_with(default.model_name)
+
+    def test_a_model_that_cannot_load_does_not_stop_the_others(self):
+        """One broken download must not leave the worker cold on everything."""
+        with patch("apps.ingestion.embeddings.get_local_model", side_effect=OSError("offline")):
+            with self.assertLogs("apps.ingestion.embeddings", level="ERROR"):
+                loaded = embeddings.warm_local_models()
+        self.assertEqual(loaded, [])

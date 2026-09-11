@@ -1,5 +1,7 @@
 """Gateway to the S3 compatible object store."""
 
+import threading
+
 import boto3
 from django.conf import settings
 from django.core.exceptions import SuspiciousFileOperation
@@ -8,16 +10,29 @@ from django.utils.text import get_valid_filename
 DELETE_BATCH_SIZE = 1000
 FALLBACK_FILENAME = "file"
 
+_client = None
+_client_lock = threading.Lock()
+
 
 def get_client():
-    """Build a client bound to the configured object store."""
-    return boto3.client(
-        "s3",
-        endpoint_url=settings.S3_ENDPOINT_URL,
-        region_name=settings.S3_REGION,
-        aws_access_key_id=settings.S3_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
-    )
+    """Return the client bound to the configured object store.
+
+    Built once per process and shared afterwards: constructing one reads the
+    service description from disk every time, which is slower than most of
+    the requests it then makes. The client is thread safe.
+    """
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = boto3.client(
+                    "s3",
+                    endpoint_url=settings.S3_ENDPOINT_URL,
+                    region_name=settings.S3_REGION,
+                    aws_access_key_id=settings.S3_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
+                )
+    return _client
 
 
 def build_key(document_id, revision, name):
