@@ -4,7 +4,7 @@ import logging
 import time
 
 from apps.access.resolver import resolve_access
-from apps.drive.models import Collection, Document, Folder
+from apps.drive.models import QUERY, Collection, Document, Folder
 from apps.drive.services import descendant_folders
 from apps.ingestion import vectors
 from apps.ingestion.embeddings import embed_texts
@@ -67,7 +67,7 @@ def run(agent, query, limit, folder_id, folder):
         collection = collections[collection_id]
         hits = vectors.search(
             collection.name,
-            embed_texts(collection, [query])[0],
+            embed_texts(collection, [query], kind=QUERY)[0],
             vectors.access_filter(scope["folders"], scope["documents"], scope["denied_documents"]),
             limit * POOL_FACTOR,
         )

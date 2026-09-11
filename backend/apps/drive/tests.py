@@ -5,7 +5,9 @@ from unittest.mock import patch
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.test.client import BOUNDARY, MULTIPART_CONTENT, encode_multipart
 
 from apps.drive.models import (
     Collection,
@@ -696,3 +698,93 @@ class CollectionChunkingEndpointTests(TestCase):
             secure=True,
         )
         self.assertEqual(response.json()["chunk_words"], 120)
+
+
+class DocumentRequestBodyTests(TestCase):
+    """What the document routes accept as a body.
+
+    The panel sends JSON for everything except the upload itself, so a route
+    that takes only multipart refuses the switch that starts the indexing. The
+    tests below go through HTTP rather than calling the services, because the
+    parsing is the part being checked and it happens before a view is reached.
+    """
+
+    def setUp(self):
+        """Sign in as the owner with one document in the root folder."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="pw-8x-forest"
+        )
+        self.client.force_login(self.owner)
+        self.root = Folder.objects.get(parent__isnull=True)
+        self.document = Document.objects.create(
+            folder=self.root,
+            name="report.txt",
+            content_type="text/plain",
+            size_bytes=10,
+            storage_key="documents/report.txt",
+        )
+
+    @patch("apps.drive.services.ingestion")
+    def test_switching_a_document_on_for_agents_takes_json(self, ingestion):
+        """This is the switch that starts the indexing, and it is sent as JSON."""
+        response = self.client.patch(
+            f"/api/documents/{self.document.pk}/",
+            {"is_agent_active": True},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.document.refresh_from_db()
+        self.assertTrue(self.document.is_agent_active)
+
+    def test_renaming_a_document_takes_json(self):
+        """Every other change the panel makes travels the same way."""
+        response = self.client.patch(
+            f"/api/documents/{self.document.pk}/",
+            {"name": "renamed.txt"},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+    @patch("apps.drive.services.ingestion")
+    def test_queueing_a_document_again_takes_json(self, ingestion):
+        """The reprocess button posts an empty JSON body like the rest."""
+        self.document.is_agent_active = True
+        self.document.save(update_fields=["is_agent_active"])
+        response = self.client.post(
+            f"/api/documents/{self.document.pk}/reprocess/",
+            {},
+            content_type="application/json",
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+    @patch("apps.drive.services.storage.upload")
+    @patch("apps.drive.services.storage.build_key", return_value="documents/new.txt")
+    def test_an_upload_still_arrives_as_multipart(self, build_key, upload):
+        """A file cannot travel as JSON, so that route has to keep working."""
+        upload = SimpleUploadedFile("new.txt", b"contents", content_type="text/plain")
+        response = self.client.post(
+            "/api/documents/",
+            {"file": upload, "folder": str(self.root.pk)},
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 201)
+
+    @patch("apps.drive.services.schedule_object_cleanup")
+    @patch("apps.drive.services.ingestion")
+    @patch("apps.drive.services.storage.upload")
+    @patch("apps.drive.services.storage.build_key", return_value="documents/report.txt")
+    def test_replacing_the_bytes_still_arrives_as_multipart(
+        self, build_key, upload, ingestion, cleanup
+    ):
+        """Replacing a file is the other route that carries one."""
+        upload = SimpleUploadedFile("report.txt", b"newer", content_type="text/plain")
+        response = self.client.put(
+            f"/api/documents/{self.document.pk}/content/",
+            data=encode_multipart(BOUNDARY, {"file": upload}),
+            content_type=MULTIPART_CONTENT,
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 200)

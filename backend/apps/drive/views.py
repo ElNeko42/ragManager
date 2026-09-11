@@ -4,7 +4,6 @@ from django.db import transaction
 from django.http import FileResponse
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsOwner
@@ -186,12 +185,18 @@ class FolderViewSet(mixins.ListModelMixin, OwnerViewSet):
 
 
 class DocumentViewSet(mixins.ListModelMixin, OwnerViewSet):
-    """Lists documents, takes uploads and serves the bytes back."""
+    """Lists documents, takes uploads and serves the bytes back.
+
+    The parsers are left as they come. An upload arrives as multipart and
+    everything else as JSON, and the framework picks by what the request
+    declares: naming only the multipart ones here, as the upload view used to
+    when it was a view of its own, refuses a JSON body on every other route of
+    the set, which is most of them.
+    """
 
     queryset = Document.objects.all()
     lookup_field = "document_id"
     serializer_class = DocumentSerializer
-    parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
         """Return the documents asked for, narrowed to one folder when given."""

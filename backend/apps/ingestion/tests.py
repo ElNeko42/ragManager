@@ -8,9 +8,9 @@ from celery.exceptions import Retry
 from django.test import TestCase, override_settings
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
-from apps.drive.models import Collection, Document, Folder, ProcessingStatus
+from apps.drive.models import PASSAGE, QUERY, Collection, Document, Folder, ProcessingStatus
 from apps.ingestion import chunking, tasks
-from apps.ingestion.embeddings import EmbeddingError
+from apps.ingestion.embeddings import EmbeddingError, embed_texts
 from apps.ingestion.extraction import ExtractionError
 from apps.ingestion.failures import TransientFailure, is_transient
 from apps.ingestion.models import ProcessingJob
@@ -243,3 +243,46 @@ class QueueRetryTests(TestCase):
         """The reason is shown in a browser, so a secret must not travel in it."""
         self.run_task(ExtractionError("failed at https://user:secret@store.example/bucket"))
         self.assertNotIn("secret", self.job.error_message)
+
+
+class PrefixTests(TestCase):
+    """The words a model expects in front of what it is asked to read."""
+
+    def setUp(self):
+        """Take a collection and give it the prefixes of the e5 family."""
+        self.collection = Collection.objects.get(is_default=True)
+        self.collection.query_prefix = "query: "
+        self.collection.passage_prefix = "passage: "
+
+    def embed(self, texts, kind):
+        """Embed through the local path with the model itself stubbed out."""
+        with patch("apps.ingestion.embeddings.embed_locally") as locally:
+            locally.return_value = [[0.0] * self.collection.vector_size for _ in texts]
+            embed_texts(self.collection, texts, kind=kind)
+        return locally.call_args.args[1]
+
+    def test_a_passage_is_sent_with_the_passage_prefix(self):
+        """A model trained on the prefix reads a bare passage as something else."""
+        self.assertEqual(self.embed(["the invoice"], PASSAGE), ["passage: the invoice"])
+
+    def test_a_query_is_sent_with_the_query_prefix(self):
+        """Measuring a question as though it were an answer costs accuracy quietly."""
+        self.assertEqual(self.embed(["where is it"], QUERY), ["query: where is it"])
+
+    def test_a_collection_naming_no_prefix_sends_the_text_unchanged(self):
+        """Most models were never trained to be told which kind they are reading."""
+        self.collection.query_prefix = ""
+        self.collection.passage_prefix = ""
+        self.assertEqual(self.embed(["plain text"], QUERY), ["plain text"])
+
+    def test_passages_are_what_a_caller_gets_without_saying(self):
+        """Ingestion is the busiest caller, so the safe default is its own."""
+        self.assertEqual(
+            self.embed(["stored text"], PASSAGE), self.embed(["stored text"], "passage")
+        )
+
+    def test_every_text_of_a_batch_carries_the_prefix(self):
+        """One unprefixed chunk in a batch is one chunk measured differently."""
+        self.assertEqual(
+            self.embed(["one", "two"], PASSAGE), ["passage: one", "passage: two"]
+        )

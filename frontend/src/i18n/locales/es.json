@@ -86,7 +86,19 @@
     "remote": "api (compatible OpenAI)",
     "subtitle": "Una colección por modelo de embeddings. Cada carpeta apunta a la colección cuyo modelo la indexa.",
     "title": "Colecciones",
-    "unused": "ninguna carpeta la usa todavía"
+    "unused": "ninguna carpeta la usa todavía",
+    "knownProvider": "Proveedor",
+    "knownProviderHint": "Rellena el endpoint. Cualquier otro que hable igual se escribe a mano.",
+    "customEndpoint": "Endpoint propio",
+    "apiKey": "Clave de API",
+    "apiKeyHint": "Se guarda cifrada y no vuelve a mostrarse. Déjala vacía para mantener la clave en el entorno.",
+    "fetchModels": "Listar los modelos",
+    "modelChoiceHint": "Se leen del propio endpoint, así que un modelo añadido hoy aparece hoy.",
+    "measure": "Medir el ancho",
+    "dimensionsMeasuredHint": "Mídelo en vez de escribirlo: un ancho equivocado inutiliza todos los vectores guardados.",
+    "measuredNotice": "El modelo respondió con {size} dimensiones en {ms} ms.",
+    "hiddenModels": "1 modelo oculto por no parecer de embeddings | {count} modelos ocultos por no parecer de embeddings",
+    "showAllModels": "Mostrar todos"
   },
   "common": {
     "cannotBeUndone": "Esto no se puede deshacer",

@@ -188,6 +188,15 @@ MCP_PATH = "/mcp/"
 
 EMBEDDING_API_KEY = env("EMBEDDING_API_KEY")
 
+# Encrypts the provider credentials the panel stores. Its own variable rather
+# than the Django secret, which is rotated to invalidate sessions and must not
+# take every stored credential with it.
+CREDENTIALS_ENCRYPTION_KEY = env("CREDENTIALS_ENCRYPTION_KEY")
+
+# The endpoints offered in the panel as a starting point. A file rather than a
+# table of vendors in the code, so an operator can ship their own list.
+PROVIDER_CATALOGUE = env("PROVIDER_CATALOGUE", str(BASE_DIR / "apps" / "ingestion" / "providers.json"))
+
 OCR_LANGUAGES = env("OCR_LANGUAGES", "eng")
 VISION_BASE_URL = env("VISION_BASE_URL")
 VISION_API_KEY = env("VISION_API_KEY")

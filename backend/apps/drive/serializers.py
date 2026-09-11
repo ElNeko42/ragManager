@@ -3,6 +3,7 @@
 from django.conf import settings
 from rest_framework import serializers
 
+from apps.common import secrets
 from apps.common.fields import OptionalUUIDField
 from apps.drive.models import Collection, Document, EmbeddingProvider, Folder
 from apps.drive.services import is_within
@@ -37,7 +38,47 @@ class ChunkingValidationMixin:
         return attrs
 
 
+class ApiKeyMixin:
+    """Takes a credential in and never lets one back out.
+
+    The key is write only and the reply says only whether one is held. A panel
+    that could read a stored credential back would put it in a browser, in a
+    cache and in whatever logs the answer passes through, which is a strange
+    thing to do to a secret that was deliberately encrypted in its row.
+    """
+
+    def store_api_key(self, validated_data):
+        """Move a submitted credential into its encrypted form.
+
+        Takes the validated data and returns it with the credential replaced by
+        the encrypted text. An empty value clears whatever was stored, which is
+        how a collection is moved back to a key kept in the environment.
+        """
+        if "api_key" not in validated_data:
+            return validated_data
+        key = validated_data.pop("api_key")
+        try:
+            validated_data["encrypted_api_key"] = secrets.encrypt(key) if key else ""
+        except secrets.EncryptionUnavailable as error:
+            raise serializers.ValidationError({"api_key": [str(error)]}) from error
+        return validated_data
+
+    def create(self, validated_data):
+        """Register the collection with its credential encrypted."""
+        return super().create(self.store_api_key(validated_data))
+
+    def update(self, instance, validated_data):
+        """Change the collection, replacing the credential when one is given."""
+        return super().update(instance, self.store_api_key(validated_data))
+
+
 class CollectionSerializer(serializers.ModelSerializer):
+    has_api_key = serializers.SerializerMethodField()
+
+    def get_has_api_key(self, collection):
+        """Report whether a credential is stored, without ever showing it."""
+        return bool(collection.encrypted_api_key)
+
     class Meta:
         model = Collection
         fields = (
@@ -50,12 +91,15 @@ class CollectionSerializer(serializers.ModelSerializer):
             "is_default",
             "chunk_words",
             "chunk_overlap_words",
+            "query_prefix",
+            "passage_prefix",
+            "has_api_key",
             "created_at",
         )
         read_only_fields = ("collection_id", "created_at")
 
 
-class CollectionCreateSerializer(ChunkingValidationMixin, CollectionSerializer):
+class CollectionCreateSerializer(ApiKeyMixin, ChunkingValidationMixin, CollectionSerializer):
     """Registers a collection, refusing the clashes with a reason to act on.
 
     The validators the framework builds from the table's own constraints are
@@ -65,8 +109,13 @@ class CollectionCreateSerializer(ChunkingValidationMixin, CollectionSerializer):
     The constraints stay on the table, so nothing gets past them either way.
     """
 
+    api_key = serializers.CharField(
+        max_length=500, required=False, allow_blank=True, write_only=True
+    )
+
     class Meta(CollectionSerializer.Meta):
         validators = []
+        fields = CollectionSerializer.Meta.fields + ("api_key",)
 
     def validate_name(self, value):
         """Reject a name already used by another collection.
@@ -110,12 +159,25 @@ class CollectionCreateSerializer(ChunkingValidationMixin, CollectionSerializer):
         return self.validate_chunking(attrs)
 
 
-class CollectionUpdateSerializer(ChunkingValidationMixin, serializers.ModelSerializer):
+class CollectionUpdateSerializer(
+    ApiKeyMixin, ChunkingValidationMixin, serializers.ModelSerializer
+):
     """Changes the few things about a collection that are safe to change."""
+
+    api_key = serializers.CharField(
+        max_length=500, required=False, allow_blank=True, write_only=True
+    )
 
     class Meta:
         model = Collection
-        fields = ("is_default", "chunk_words", "chunk_overlap_words")
+        fields = (
+            "is_default",
+            "chunk_words",
+            "chunk_overlap_words",
+            "query_prefix",
+            "passage_prefix",
+            "api_key",
+        )
 
     def validate(self, attrs):
         """Check the chunk size against what the collection already holds."""

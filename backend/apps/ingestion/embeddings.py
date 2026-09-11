@@ -5,7 +5,8 @@ import os
 import httpx
 from django.conf import settings
 
-from apps.drive.models import EmbeddingProvider
+from apps.common import secrets
+from apps.drive.models import PASSAGE, EmbeddingProvider
 
 API_TIMEOUT_SECONDS = 120
 _loaded_models = {}
@@ -34,16 +35,22 @@ def get_local_model(model_name):
     return _loaded_models[model_name]
 
 
-def embed_texts(collection, texts):
+def embed_texts(collection, texts, kind=PASSAGE):
     """Embed a list of texts with the model bound to a collection.
 
-    Takes the collection record and the texts. Returns one vector per text in
-    the same order. Raises EmbeddingError when the width the model returns
-    disagrees with the one the collection was created with, which would make
-    every stored vector unusable against the existing ones.
+    Takes the collection record, the texts and whether they are passages being
+    stored or a query being asked. Returns one vector per text in the same
+    order. Raises EmbeddingError when the width the model returns disagrees
+    with the one the collection was created with, which would make every
+    stored vector unusable against the existing ones.
+
+    A model that expects to be told which of the two it is reading gets that
+    from the collection; one that does not carries no prefix and is asked
+    exactly what it was asked before.
     """
     if not texts:
         return []
+    texts = apply_prefix(collection, texts, kind)
     if collection.provider == EmbeddingProvider.LOCAL:
         vectors = embed_locally(collection.model_name, texts)
     else:
@@ -54,6 +61,17 @@ def embed_texts(collection, texts):
             f"expects {collection.vector_size}"
         )
     return vectors
+
+
+def apply_prefix(collection, texts, kind):
+    """Put the words the model expects in front of each text.
+
+    Takes the collection, the texts and whether they are a query or passages.
+    Returns the texts unchanged when the collection names no prefix, which is
+    every model that was never trained to be told the difference.
+    """
+    prefix = collection.prefix_for(kind)
+    return [f"{prefix}{text}" for text in texts] if prefix else texts
 
 
 def embed_locally(model_name, texts):
@@ -69,13 +87,22 @@ def embed_locally(model_name, texts):
 def get_api_key(collection):
     """Find the credential belonging to a collection's endpoint.
 
-    Takes the collection and looks for a key named after it, falling back to
-    the shared one. An instance holding collections at two different providers
+    Takes the collection. A credential stored through the panel wins, since it
+    is the one somebody most recently said this collection should use. Failing
+    that, a key named after the collection in the environment, and failing that
+    the shared one: an instance holding collections at two different providers
     would otherwise send one provider's credential to the other, since the
-    endpoint is chosen per collection but the key was not. The keys stay in the
-    environment rather than in the row, because the row is readable from the
-    database. Returns the key, or None when none is configured.
+    endpoint is chosen per collection but the shared key was not. Returns the
+    key, or None when none is configured anywhere.
+
+    A stored credential is encrypted in the row. It is still a row in a
+    database somebody may be able to read, so an instance that would rather
+    keep its secrets out of there can leave the field empty and use the
+    environment exactly as before.
     """
+    stored = secrets.decrypt(collection.encrypted_api_key)
+    if stored:
+        return stored
     suffix = collection.name.upper().replace("-", "_")
     return os.environ.get(f"EMBEDDING_API_KEY_{suffix}") or settings.EMBEDDING_API_KEY
 

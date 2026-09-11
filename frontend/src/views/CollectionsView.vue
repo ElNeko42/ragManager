@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import AppShell from '../components/layout/AppShell.vue'
@@ -25,6 +25,8 @@ import {
   updateFolder
 } from '../api/drive'
 import type { Collection, Folder } from '../api/drive'
+import { listProviderModels, listProviders, probeModel } from '../api/providers'
+import type { Provider, ProviderModel } from '../api/providers'
 
 const { t } = useI18n()
 const { busy, failure, run, clear } = useAction()
@@ -37,14 +39,48 @@ const creating = ref(false)
 const removing = ref<Collection | null>(null)
 const switchingBase = ref('')
 
-const draft = ref({
+const BLANK_DRAFT = {
   name: '',
   provider: 'local',
+  preset: 'custom',
   base_url: '',
+  api_key: '',
   model_name: '',
   vector_size: '384',
   is_default: false
-})
+}
+
+const draft = ref({ ...BLANK_DRAFT })
+
+const catalogue = ref<Provider[]>([])
+const models = ref<ProviderModel[]>([])
+const listingSupported = ref(true)
+const asking = ref(false)
+const hiddenModels = ref(0)
+const showingAll = ref(false)
+const measured = ref<number | null>(null)
+const endpointNote = ref('')
+
+const presets = computed(() => [
+  ...catalogue.value.map((provider) => ({
+    value: provider.id,
+    label: provider.label
+  })),
+  { value: 'custom', label: t('collections.customEndpoint') }
+])
+
+const chosenPreset = computed(
+  () => catalogue.value.find((provider) => provider.id === draft.value.preset) ?? null
+)
+
+const modelOptions = computed(() =>
+  [...models.value]
+    .sort((a, b) => Number(b.looks_like_embedding) - Number(a.looks_like_embedding))
+    .map((model) => ({ value: model.id, label: model.id }))
+)
+
+const canAsk = computed(() => Boolean(draft.value.base_url.trim()) && !asking.value && !busy.value)
+const canMeasure = computed(() => canAsk.value && Boolean(draft.value.model_name.trim()))
 
 const providers = computed(() => [
   { value: 'local', label: t('collections.local') },
@@ -71,6 +107,7 @@ const draftTouched = computed(() =>
       draft.value.model_name ||
       draft.value.base_url ||
       draft.value.provider !== 'local' ||
+      draft.value.api_key ||
       draft.value.vector_size !== '384' ||
       draft.value.is_default
   )
@@ -126,9 +163,14 @@ const cards = computed(() =>
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const [cols, tree] = await Promise.all([listCollections(), listFolders()])
+    const [cols, tree, offered] = await Promise.all([
+      listCollections(),
+      listFolders(),
+      listProviders()
+    ])
     collections.value = cols
     folders.value = tree
+    catalogue.value = offered.providers
     switchingBase.value = root.value?.collection ?? ''
   } finally {
     loading.value = false
@@ -139,16 +181,102 @@ async function load(): Promise<void> {
  * Opens the registration form on a clean draft.
  */
 function startCreate(): void {
-  draft.value = {
-    name: '',
-    provider: 'local',
-    base_url: '',
-    model_name: '',
-    vector_size: '384',
-    is_default: false
-  }
+  draft.value = { ...BLANK_DRAFT }
+  models.value = []
+  listingSupported.value = true
+  hiddenModels.value = 0
+  showingAll.value = false
+  measured.value = null
+  endpointNote.value = ''
   clear()
   creating.value = true
+}
+
+/**
+ * Fills the endpoint in from the provider the owner picked.
+ *
+ * Only the URL is filled: the models are asked of the endpoint itself, so a
+ * default that has since moved is corrected by editing the field rather than
+ * by waiting for a release.
+ */
+watch(
+  () => draft.value.preset,
+  () => choosePreset()
+)
+
+function choosePreset(): void {
+  models.value = []
+  hiddenModels.value = 0
+  showingAll.value = false
+  measured.value = null
+  endpointNote.value = ''
+  draft.value.model_name = ''
+  if (chosenPreset.value) {
+    draft.value.base_url = chosenPreset.value.base_url
+  }
+}
+
+/**
+ * Asks the endpoint which models it serves.
+ *
+ * The answer comes from the endpoint rather than from a list shipped with this
+ * project, so a provider that adds a model today offers it today. An endpoint
+ * with no list to give says so and the name is typed instead.
+ */
+function askForModels(includeAll = false): void {
+  asking.value = true
+  endpointNote.value = ''
+  void run(async () => {
+    try {
+      const listing = await listProviderModels({
+        base_url: draft.value.base_url.trim(),
+        api_key: draft.value.api_key,
+        provider: draft.value.preset === 'custom' ? undefined : draft.value.preset,
+        include_all: includeAll
+      })
+      models.value = listing.models
+      listingSupported.value = listing.listing_supported
+      hiddenModels.value = listing.hidden
+      showingAll.value = !listing.filtered
+      endpointNote.value = listing.detail ?? ''
+    } finally {
+      asking.value = false
+    }
+  })
+}
+
+/**
+ * Asks again for everything the endpoint serves.
+ *
+ * Recognising an embedding model by its name is a guess, so the models it does
+ * not recognise stay one click away rather than out of reach.
+ */
+function showEveryModel(): void {
+  askForModels(true)
+}
+
+/**
+ * Measures the width of the chosen model and puts it in the form.
+ *
+ * The width is the one field an owner cannot know and the one that makes every
+ * stored vector unusable when it is wrong, so it is read off the model rather
+ * than typed from a documentation page.
+ */
+function measure(): void {
+  asking.value = true
+  void run(async () => {
+    try {
+      const result = await probeModel({
+        base_url: draft.value.base_url.trim(),
+        api_key: draft.value.api_key,
+        model_name: draft.value.model_name.trim()
+      })
+      draft.value.vector_size = String(result.vector_size)
+      measured.value = result.duration_ms
+    } finally {
+      asking.value = false
+    }
+  })
 }
 
 /**
@@ -164,13 +292,15 @@ function submit(): void {
     return
   }
   void run(async () => {
+    const remote = draft.value.provider === 'api'
     await createCollection({
       name: draft.value.name.trim(),
-      provider: draft.value.provider === 'api' ? 'api' : 'local',
-      base_url: draft.value.provider === 'api' ? draft.value.base_url.trim() : '',
+      provider: remote ? 'api' : 'local',
+      base_url: remote ? draft.value.base_url.trim() : '',
       model_name: draft.value.model_name.trim(),
       vector_size: size,
-      is_default: draft.value.is_default
+      is_default: draft.value.is_default,
+      api_key: remote ? draft.value.api_key : ''
     })
     creating.value = false
     await load()
@@ -343,16 +473,74 @@ onMounted(() => void run(load))
           />
         </BaseField>
 
-        <BaseField
-          v-if="draft.provider === 'api'"
-          :label="t('collections.endpoint')"
-          for-id="collection-url"
-          :hint="t('collections.endpointHint')"
-        >
-          <BaseInput id="collection-url" v-model="draft.base_url" required :disabled="busy" />
-        </BaseField>
+        <template v-if="draft.provider === 'api'">
+          <BaseField
+            :label="t('collections.knownProvider')"
+            for-id="collection-preset"
+            :hint="t('collections.knownProviderHint')"
+          >
+            <BaseSelect
+              id="collection-preset"
+              v-model="draft.preset"
+              :options="presets"
+              :disabled="busy"
+            />
+          </BaseField>
+
+          <BaseField
+            :label="t('collections.endpoint')"
+            for-id="collection-url"
+            :hint="t('collections.endpointHint')"
+          >
+            <BaseInput id="collection-url" v-model="draft.base_url" required :disabled="busy" />
+          </BaseField>
+
+          <BaseField
+            :label="t('collections.apiKey')"
+            for-id="collection-key"
+            :hint="t('collections.apiKeyHint')"
+          >
+            <BaseInput
+              id="collection-key"
+              v-model="draft.api_key"
+              type="password"
+              autocomplete="off"
+              :disabled="busy"
+            />
+          </BaseField>
+
+          <div class="buttons">
+            <BaseButton variant="quiet" :disabled="!canAsk" @click="askForModels()">
+              {{ t('collections.fetchModels') }}
+            </BaseButton>
+          </div>
+
+          <BaseAlert v-if="endpointNote" tone="info">{{ endpointNote }}</BaseAlert>
+        </template>
 
         <BaseField
+          v-if="draft.provider === 'api' && modelOptions.length"
+          :label="t('collections.model')"
+          for-id="collection-model-choice"
+          :hint="t('collections.modelChoiceHint')"
+        >
+          <BaseSelect
+            id="collection-model-choice"
+            v-model="draft.model_name"
+            :options="modelOptions"
+            :disabled="busy"
+          />
+        </BaseField>
+
+        <div v-if="hiddenModels > 0 && !showingAll" class="hidden-note">
+          <span>{{ t('collections.hiddenModels', hiddenModels) }}</span>
+          <BaseButton variant="quiet" :disabled="!canAsk" @click="showEveryModel">
+            {{ t('collections.showAllModels') }}
+          </BaseButton>
+        </div>
+
+        <BaseField
+          v-else
           :label="t('collections.model')"
           for-id="collection-model"
           :hint="draft.provider === 'api' ? t('collections.modelHintApi') : t('collections.modelHintLocal')"
@@ -363,7 +551,7 @@ onMounted(() => void run(load))
         <BaseField
           :label="t('collections.dimensions')"
           for-id="collection-size"
-          :hint="t('collections.dimensionsHint')"
+          :hint="draft.provider === 'api' ? t('collections.dimensionsMeasuredHint') : t('collections.dimensionsHint')"
         >
           <BaseInput
             id="collection-size"
@@ -374,8 +562,14 @@ onMounted(() => void run(load))
           />
         </BaseField>
 
-        <BaseAlert v-if="draft.provider === 'api' && draft.name.trim()" tone="info">
-          {{ t('collections.keyNotice', { key: environmentKey }) }}
+        <div v-if="draft.provider === 'api'" class="buttons">
+          <BaseButton variant="quiet" :disabled="!canMeasure" @click="measure">
+            {{ t('collections.measure') }}
+          </BaseButton>
+        </div>
+
+        <BaseAlert v-if="measured !== null" tone="positive">
+          {{ t('collections.measuredNotice', { size: draft.vector_size, ms: measured }) }}
         </BaseAlert>
 
         <div class="buttons">
@@ -403,6 +597,15 @@ onMounted(() => void run(load))
 </template>
 
 <style scoped>
+.hidden-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--rm-space-3);
+  font-size: 12px;
+  color: var(--rm-ink-soft);
+}
+
 .buttons {
   display: flex;
   justify-content: flex-end;

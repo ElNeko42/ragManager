@@ -85,6 +85,9 @@ export async function requestJson<T>(
   method: string,
   payload: unknown
 ): Promise<T> {
+  if (payload === undefined) {
+    return request<T>(path, { method })
+  }
   return request<T>(path, {
     method,
     headers: { 'Content-Type': 'application/json' },

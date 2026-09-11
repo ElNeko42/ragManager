@@ -20,6 +20,10 @@ class EmbeddingProvider(models.TextChoices):
     API = "api", "API endpoint"
 
 
+QUERY = "query"
+PASSAGE = "passage"
+
+
 class ProcessingStatus(models.TextChoices):
     """Lifecycle of an ingestion run."""
 
@@ -55,6 +59,9 @@ class Collection(models.Model):
     is_default = models.BooleanField(default=False)
     chunk_words = models.PositiveIntegerField(null=True, blank=True)
     chunk_overlap_words = models.PositiveIntegerField(null=True, blank=True)
+    encrypted_api_key = models.TextField(blank=True, default="")
+    query_prefix = models.CharField(max_length=100, blank=True, default="")
+    passage_prefix = models.CharField(max_length=100, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -94,6 +101,19 @@ class Collection(models.Model):
     def __str__(self):
         """Return the collection name."""
         return self.name
+
+    def prefix_for(self, kind):
+        """Return the words a model expects in front of a text it is given.
+
+        Takes whether the text is a query or a passage. A family of models is
+        trained to be told which of the two it is reading, and asking one of
+        them without saying so measures a question against answers as though
+        both were the same kind of thing, which costs accuracy quietly rather
+        than failing. The words themselves live on the collection because they
+        belong to the model, and naming them here rather than in code keeps
+        this project free of a table of vendors and their habits.
+        """
+        return self.query_prefix if kind == QUERY else self.passage_prefix
 
     def chunking_plan(self):
         """Return the (words, overlap) this collection's text is split with.

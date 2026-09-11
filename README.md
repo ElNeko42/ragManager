@@ -107,6 +107,20 @@ variables that serves debug tracebacks while looking like production:
 | `config.settings.prod` (default) | off | gunicorn |
 | `config.settings.dev` | on | runserver, with autoreload |
 
+The compose file mounts `./backend` into both the backend and the worker, so
+the code they run is the code in the repository. Under production settings
+gunicorn reads it once at boot and the worker imports its tasks once, which
+means **a change to the backend is not running until those two are restarted**:
+
+```sh
+docker compose restart backend worker
+```
+
+The tests will not tell you otherwise — `manage.py test` starts a new process
+and therefore always runs the code on disk, so a suite can pass against a
+change the running server has never loaded. Development settings avoid this
+entirely: runserver reloads itself.
+
 The panel has the same pair. `FRONTEND_TARGET=production` (the default) builds
 the application and serves the result with nginx; `FRONTEND_TARGET=development`
 runs the Vite server with hot reload. Both listen on the same port and both
@@ -135,6 +149,16 @@ tokens of a piece and silently ignores the rest, so a chunk longer than the
 model reads is stored and returned in full while only its opening influenced
 the vector: the passage that answers the question is there, and it scores
 badly. The default model here reads 256 tokens, which is roughly 200 words.
+
+### Telling a model which end it is reading
+
+A family of embedding models is trained to be told whether it is reading a
+question or an answer, and asking one without saying so measures the two as
+though they were the same kind of thing. `query_prefix` and `passage_prefix` on
+a collection carry those words — `query: ` and `passage: ` for the e5 family,
+empty for a model that was never trained on them. They live on the collection
+because they belong to the model, which keeps a table of vendors and their
+habits out of this project.
 
 `CHUNK_WORDS` and `CHUNK_OVERLAP_WORDS` set the instance default. A collection
 may name its own size, which is where it belongs, since the limit is the
@@ -211,16 +235,59 @@ Vectors of two models cannot be compared, so a model belongs to one collection
 and one only. Registering a model a collection already holds is refused, in the
 serializer and on the table, and the refusal names the collection that has it.
 
+### Registering one without knowing its details
+
+The form asks for an endpoint, a model name and a vector width, and until you
+have used a provider before you know none of the three. So it asks the
+endpoint instead:
+
+1. Pick a provider, which fills in its base URL. Anything else that speaks the
+   same shape is typed in; the list only saves keystrokes.
+2. Paste the key. **List the models** reads them from the endpoint itself, so a
+   model the provider added today is offered today, and a mistyped URL or a
+   rejected key fails here rather than on a document three hours later. An
+   endpoint serving a single model has no list to give and says so; type the
+   name.
+
+   Only the embedding models are listed. A provider serves a handful of them
+   beside a long list of chat models and rerankers, and one of those picked by
+   mistake registers a collection that can never index anything — a mistake
+   found only once a document has been uploaded, switched on and put through
+   the queue. Each catalogue entry says how its provider names them
+   (`embedding_pattern`), because not every embedding model has the word in its
+   name: Voyage calls its models `voyage-3.5`. The form says how many it left
+   out and offers to show them, and a list where nothing is recognisable is
+   shown whole, since an empty list is worse than the mistake being prevented.
+3. **Measure the width** embeds one sentence and fills the width in from what
+   came back. It is the one field nobody can guess and the one that makes every
+   stored vector unusable when it is wrong.
+
+The list of providers is `backend/apps/ingestion/providers.json`, or whatever
+`PROVIDER_CATALOGUE` points at. It is data, not code: nothing in this project
+is written for one company, and an entry there only saves typing a URL.
+
 ### Where the credential lives
 
-`EMBEDDING_API_KEY` is the shared credential. A collection can carry its own by
-setting `EMBEDDING_API_KEY_<NAME>` — the collection name upper cased with
-hyphens turned into underscores, so `openai-large` reads
-`EMBEDDING_API_KEY_OPENAI_LARGE`. Give each collection its own key when they
-live at different providers, so one provider's credential is never sent to
-another. The panel names the variable a collection will look for while you
-register it. Keys stay in the environment because the row is readable from the
-database; adding one means restarting the backend and the worker.
+Set `CREDENTIALS_ENCRYPTION_KEY` and the panel keeps each collection's key,
+encrypted in its row with Fernet. It is written once and never shown again;
+the API says only whether one is held. Generate the key with:
+
+```sh
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Changing that key makes every stored credential unreadable, which reads as no
+credential at all rather than as a crash, so rotating it means re-entering the
+keys in the panel.
+
+A row in a database is still a row somebody may be able to read, so the
+environment works exactly as before and wins when nothing is stored:
+`EMBEDDING_API_KEY_<NAME>` — the collection name upper cased with hyphens
+turned into underscores, so `openai-large` reads
+`EMBEDDING_API_KEY_OPENAI_LARGE` — and `EMBEDDING_API_KEY` as the shared
+fallback. Leave `CREDENTIALS_ENCRYPTION_KEY` empty to keep it that way: the
+panel then refuses to store a credential and says why. Order of precedence:
+the stored key, then the one named after the collection, then the shared one.
 
 ### Which model indexes which folder
 
@@ -374,6 +441,11 @@ panel renders the same report on its front page.
 ```sh
 docker compose exec backend python manage.py test apps
 ```
+
+It also covers what happens to a stored credential on its way into a row and
+back out, and what the panel does with an endpoint that cannot be reached, one
+that refuses the key and one that serves a single model and has no list to
+give.
 
 The suite covers the permission resolver and the pieces that turn a resolved
 permission into an answer, which is where a mistake would hand an agent a

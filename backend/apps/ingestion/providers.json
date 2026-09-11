@@ -1,0 +1,80 @@
+{
+  "comment": [
+    "Endpoints known to speak the OpenAI embeddings shape, offered in the panel",
+    "as a starting point. This is data, not code: nothing in this project is",
+    "written for one company, and an entry here only saves typing a URL.",
+    "Edit it, or point PROVIDER_CATALOGUE at a file of your own.",
+    "A wrong base_url is harmless: the panel lists the models from the endpoint",
+    "itself before anything is saved, so it fails in front of you.",
+    "embedding_pattern says which of the models an endpoint serves are embedding",
+    "models, since most serve chat models from the same list and picking one of",
+    "those registers a collection that can never be indexed. It is matched",
+    "without case against the model name. Leave it out and a generic guess is",
+    "used instead. Getting it wrong hides models rather than breaking anything:",
+    "the panel offers the unfiltered list whenever the filter leaves nothing,",
+    "and always offers to show everything."
+  ],
+  "providers": [
+    {
+      "id": "openai",
+      "label": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "docs_url": "https://platform.openai.com/docs/guides/embeddings",
+      "needs_key": true,
+      "embedding_pattern": "embedding"
+    },
+    {
+      "id": "google-gemini",
+      "label": "Google Gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "docs_url": "https://ai.google.dev/gemini-api/docs/openai",
+      "needs_key": true,
+      "embedding_pattern": "embedding"
+    },
+    {
+      "id": "mistral",
+      "label": "Mistral",
+      "base_url": "https://api.mistral.ai/v1",
+      "docs_url": "https://docs.mistral.ai/capabilities/embeddings/",
+      "needs_key": true,
+      "embedding_pattern": "embed"
+    },
+    {
+      "id": "voyage",
+      "label": "Voyage AI",
+      "base_url": "https://api.voyageai.com/v1",
+      "docs_url": "https://docs.voyageai.com/docs/embeddings",
+      "needs_key": true,
+      "embedding_pattern": "^voyage-"
+    },
+    {
+      "id": "jina",
+      "label": "Jina AI",
+      "base_url": "https://api.jina.ai/v1",
+      "docs_url": "https://jina.ai/embeddings/",
+      "needs_key": true,
+      "embedding_pattern": "embed|clip"
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "docs_url": "https://openrouter.ai/docs",
+      "needs_key": true
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama (self-hosted)",
+      "base_url": "http://ollama:11434/v1",
+      "docs_url": "https://ollama.com/blog/openai-compatibility",
+      "needs_key": false
+    },
+    {
+      "id": "text-embeddings-inference",
+      "label": "Text Embeddings Inference (self-hosted)",
+      "base_url": "http://text-embeddings:80/v1",
+      "docs_url": "https://huggingface.co/docs/text-embeddings-inference",
+      "needs_key": false
+    }
+  ]
+}

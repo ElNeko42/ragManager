@@ -40,6 +40,9 @@ export interface Collection {
   is_default: boolean
   chunk_words: number | null
   chunk_overlap_words: number | null
+  query_prefix: string
+  passage_prefix: string
+  has_api_key: boolean
   created_at: string
 }
 
@@ -160,6 +163,9 @@ export interface NewCollection {
   is_default: boolean
   chunk_words?: number | null
   chunk_overlap_words?: number | null
+  query_prefix?: string
+  passage_prefix?: string
+  api_key?: string
 }
 
 /**

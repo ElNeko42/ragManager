@@ -86,7 +86,19 @@
     "remote": "api (OpenAI compatible)",
     "subtitle": "One collection per embedding model. Every folder points at the collection whose model indexes it.",
     "title": "Collections",
-    "unused": "no folder uses it yet"
+    "unused": "no folder uses it yet",
+    "knownProvider": "Provider",
+    "knownProviderHint": "Fills in the endpoint. Anything speaking the same shape is typed in instead.",
+    "customEndpoint": "Custom endpoint",
+    "apiKey": "API key",
+    "apiKeyHint": "Stored encrypted and never shown again. Leave it empty to keep the key in the environment.",
+    "fetchModels": "List the models",
+    "modelChoiceHint": "Read from the endpoint itself, so a model added today is offered today.",
+    "measure": "Measure the width",
+    "dimensionsMeasuredHint": "Measure it rather than typing it: the wrong width makes every stored vector unusable.",
+    "measuredNotice": "The model answered with {size} dimensions in {ms} ms.",
+    "hiddenModels": "1 model hidden because it does not look like an embedding model | {count} models hidden because they do not look like embedding models",
+    "showAllModels": "Show all"
   },
   "common": {
     "cannotBeUndone": "This cannot be undone",
