@@ -1,32 +1,78 @@
 # ragManager
 
+<p align="center">
+  <img src="frontend/public/logo.svg" width="96" height="96" alt="" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/ElNeko42/ragManager/actions/workflows/ci.yml"><img src="https://github.com/ElNeko42/ragManager/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue.svg" alt="MIT" /></a>
+</p>
+
 Self-hosted RAG storage with a Google Drive style management panel, built so
 that the primary consumer is an **external AI agent** rather than a person in a
 chat window. There is no built-in chat: documents are uploaded and organised
-through the web panel, and agents such as Claude or Gemini query them through
-the MCP server.
+through the web panel, and agents such as Claude query them over the Model
+Context Protocol — from Claude Code, Claude Desktop, Cursor, or claude.ai
+itself.
 
 Permissions are granted to agents, each with its own identity and token, not to
-people.
+people. What an agent can find is exactly what the owner granted it, and every
+question it asked is on record.
+
+## Highlights
+
+- **Permissions for agents, not users.** Rules are written on folders and
+  inherited down the tree; the most specific one wins. Two doors into the
+  store — the MCP endpoint and a plain search API — resolve access from the
+  same code, so they cannot disagree.
+- **Works with claude.ai out of the box.** The server is an OAuth 2.1
+  authorization server (PKCE, exact redirect matching, rotating refresh
+  tokens, audience-bound access tokens). Add a connector by URL, approve it in
+  a browser as one of your agents, done. Other clients take a token in a
+  header.
+- **Vendor-neutral embeddings.** A local sentence-transformers model by
+  default, needing no account anywhere, or any endpoint that speaks the
+  OpenAI embeddings shape. Provider credentials are encrypted at rest and never
+  shown again.
+- **Chunks sized by what the model actually reads.** Text is split by tokens
+  measured with the model's own tokeniser, not by a word count that lies in
+  every language but English. A 228 word chunk cost 620 tokens against a
+  model that reads 256 — three fifths of it was never embedded.
+- **An audit log of every agent query.** Who asked, what, through which door,
+  how many passages came back, how long it took. It is how a missing
+  permission is found in seconds.
+- **A queue that survives a bad minute.** A vector store restarting for sixty
+  seconds retries with backoff; a file nobody can read fails once, with the
+  reason, and never retries.
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    Agent["AI agent<br/>(Claude, Cursor, claude.ai…)"] -- "MCP + OAuth 2.1 /<br/>bearer token" --> API
+    Owner["Owner<br/>(web panel)"] -- session --> API
+    API["Django + DRF<br/>permissions · search · audit log"]
+    API --> PG[("PostgreSQL<br/>folders · documents · rules")]
+    API --> Q[("Qdrant<br/>chunks · vectors")]
+    API --> S3[("S3 / MinIO<br/>files")]
+    API -- enqueue --> W["Celery worker<br/>extract · chunk · embed"]
+    W --> S3
+    W --> Q
+    W --> E["Embedding model<br/>local or any OpenAI-shaped endpoint"]
+```
 
 ## Status
 
-Under construction. The management API, authentication, the ingestion
-pipeline, the permission resolver, the search endpoint and the MCP server
-work. The web panel covers documents and folders, agents and their tokens,
-permissions, and registering the embedding models that index it all.
+Working and in daily use on a single-owner instance. The management API,
+authentication, the ingestion pipeline, the permission resolver, the search
+endpoint, the MCP server and the OAuth flow are covered by 345 tests, a good
+part of them written against the specific ways a piece could hand an agent a
+document it was never granted.
 
-An external agent can reach the store either through the MCP endpoint or by
-calling the search endpoint directly with its token. Both doors resolve
-permissions the same way, from the same resolver.
-
-The ingestion queue retries a dependency that was unreachable, the listings
-are paged, every agent query is written down, and the chunk size is a setting
-of each collection rather than a constant.
-
-What it does not have yet: there are no tests in front of the panel, and the
-panel does not yet surface the query log or the reprocess button the API
-offers.
+What it does not have yet: tests in front of the panel, and a panel view for
+the query log and the reprocess button the API offers. The panel is a single
+owner; roles are a later milestone.
 
 ## Stack
 
@@ -502,6 +548,13 @@ This needs the instance to be reachable over the public internet on https,
 since the approval happens in the user's browser and the callback goes back to
 the client.
 
+Registration is open, because a connector has to be able to introduce itself,
+and rate limited per address, because anything open to the internet is
+registered with by anyone who feels like it. A client that registers and never
+completes the flow is removed after a day, on its own; `manage.py prune_oauth`
+does the same on demand, along with expired codes and tokens that have been
+dead a week.
+
 Three tools are offered:
 
 | Tool | What it does |
@@ -541,6 +594,10 @@ panel renders the same report on its front page.
 ```sh
 docker compose exec backend python manage.py test apps
 ```
+
+The same suite, the migration check and the panel's type check run on every
+push through GitHub Actions, against a PostgreSQL and a Redis started for the
+occasion; see `.github/workflows/ci.yml`.
 
 It also covers what happens to a stored credential on its way into a row and
 back out, and what the panel does with an endpoint that cannot be reached, one

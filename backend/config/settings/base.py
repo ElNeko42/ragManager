@@ -152,6 +152,8 @@ REST_FRAMEWORK = {
         "login": "10/min",
         "account": "10/min",
         "search": env("SEARCH_THROTTLE_RATE", "60/min"),
+        "oauth-register": env("OAUTH_REGISTER_THROTTLE_RATE", "10/hour"),
+        "oauth-token": env("OAUTH_TOKEN_THROTTLE_RATE", "60/min"),
     },
     "NUM_PROXIES": env_int("TRUSTED_PROXY_COUNT", 1 if PUBLIC_HOST else 0),
     "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.Pagination",

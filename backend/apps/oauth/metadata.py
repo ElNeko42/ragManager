@@ -73,5 +73,4 @@ def authorization_server(request):
             "client_secret_post",
             "client_secret_basic",
         ],
-        "service_documentation": "https://github.com/",
     }

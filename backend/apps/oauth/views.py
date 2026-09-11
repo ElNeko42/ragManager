@@ -1,7 +1,6 @@
 """The endpoints of the authorization server and the screen the owner sees."""
 
 import base64
-import json
 import logging
 from urllib.parse import urlencode, urlparse
 
@@ -10,13 +9,17 @@ from django.http import JsonResponse
 from django.shortcuts import redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
-from django.views.decorators.csrf import csrf_exempt, csrf_protect
+from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters, sensitive_variables
+from rest_framework.permissions import AllowAny
+from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
 
 from apps.accounts.models import User
 from apps.agents.models import Agent
 from apps.oauth import metadata, service, tokens
 from apps.oauth.models import OAuthClient
+from apps.oauth.pruning import prune
 
 logger = logging.getLogger(__name__)
 
@@ -38,23 +41,60 @@ def authorization_server(request):
     return JsonResponse(metadata.authorization_server(request))
 
 
-@method_decorator(csrf_exempt, name="dispatch")
-class RegisterView(View):
+class RegistrationThrottle(AnonRateThrottle):
+    """Caps how often one address may register clients.
+
+    Registering costs nothing and grants nothing, which is exactly why an
+    endpoint open to the internet needs a ceiling on it: a row per request is
+    a table that grows with every stranger who finds the address. A real
+    connector registers once.
+    """
+
+    scope = "oauth-register"
+
+
+class TokenThrottle(AnonRateThrottle):
+    """Caps how often one address may ask the token endpoint for anything.
+
+    Codes and refresh tokens carry far too much entropy to guess, so this is
+    not what stops guessing. It stops the endpoint being hammered for free.
+    """
+
+    scope = "oauth-token"
+
+
+class PublicEndpoint(APIView):
+    """What the two endpoints a program calls have in common.
+
+    No authentication runs on them at all: the caller proves itself with a
+    code, a verifier or a secret inside the request, not with a session, and
+    with no session there is nothing for a forged cross site request to ride
+    on, so no such check is needed either.
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+
+class RegisterView(PublicEndpoint):
     """Lets a client obtain an identity without anyone typing it in.
 
     Registering grants nothing. A client that has registered may ask, and the
     owner is the one who answers: until that approval it reaches no document,
-    no agent and no folder. The cross site check is lifted because the caller
-    is a program with no cookies here, and there is no session for a forged
-    request to ride on.
+    no agent and no folder.
     """
 
+    throttle_classes = [RegistrationThrottle]
+
     def post(self, request):
-        """Register a client and return the identity it should use."""
-        try:
-            payload = json.loads(request.body.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
-            return error("invalid_client_metadata", "The body is not valid JSON")
+        """Register a client and return the identity it should use.
+
+        Clients that registered and never completed the flow are pruned on the
+        way in, so the table holds what is in use rather than everyone who
+        ever found the address.
+        """
+        prune()
+        payload = request.data
         if not isinstance(payload, dict):
             return error("invalid_client_metadata", "The body has to be an object")
 
@@ -229,30 +269,37 @@ class AuthorizeView(View):
         )
 
 
-@method_decorator(csrf_exempt, name="dispatch")
-class TokenView(View):
-    """Exchanges an approval, or a refresh token, for a fresh pair."""
+@method_decorator(sensitive_post_parameters(), name="dispatch")
+class TokenView(PublicEndpoint):
+    """Exchanges an approval, or a refresh token, for a fresh pair.
 
-    @method_decorator(sensitive_post_parameters())
+    The parameters are marked sensitive on dispatch, which is where the plain
+    request still is: by the time a handler runs the framework has wrapped it,
+    and the marker wants the original.
+    """
+
+    throttle_classes = [TokenThrottle]
+
     @method_decorator(sensitive_variables())
     def post(self, request):
         """Answer a token request of either grant this server offers."""
         try:
             client = self.identify(request)
-            grant = request.POST.get("grant_type")
+            data = request.data
+            grant = data.get("grant_type")
             if grant == "authorization_code":
                 access, refresh, _ = service.redeem_code(
                     client,
-                    request.POST.get("code") or "",
-                    request.POST.get("code_verifier") or "",
-                    request.POST.get("redirect_uri") or "",
-                    request.POST.get("resource") or "",
+                    data.get("code") or "",
+                    data.get("code_verifier") or "",
+                    data.get("redirect_uri") or "",
+                    data.get("resource") or "",
                 )
             elif grant == "refresh_token":
                 access, refresh = service.rotate(
                     client,
-                    request.POST.get("refresh_token") or "",
-                    request.POST.get("resource") or "",
+                    data.get("refresh_token") or "",
+                    data.get("resource") or "",
                 )
             else:
                 raise service.OAuthError("unsupported_grant_type", "That grant is not offered")
@@ -295,7 +342,7 @@ class TokenView(View):
                 return name, secret
             except (ValueError, UnicodeDecodeError):
                 raise service.OAuthError("invalid_client", "The header cannot be read", 401)
-        return request.POST.get("client_id"), request.POST.get("client_secret")
+        return request.data.get("client_id"), request.data.get("client_secret")
 
 
 def valid_uuid(value):

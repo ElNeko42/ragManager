@@ -5,8 +5,11 @@ import hashlib
 import json
 from urllib.parse import parse_qs, urlparse
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -64,6 +67,9 @@ class MetadataTests(TestCase):
             self.assertTrue(body[field].startswith("http"))
 
 
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
 class RegistrationTests(TestCase):
     """Obtaining an identity without anybody typing one in."""
 
@@ -215,6 +221,9 @@ class AuthorizeTests(TestCase):
         self.assertNotIn(code, AuthorizationCode.objects.first().code_hash)
 
 
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
 class TokenTests(TestCase):
     """Exchanging an approval for a credential, and the ways that can go wrong."""
 
@@ -342,6 +351,9 @@ class TokenTests(TestCase):
         self.assertEqual(answer.json()["error"], "unsupported_grant_type")
 
 
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
 class RefreshTests(TestCase):
     """Renewing a credential, and noticing when one has been copied."""
 
@@ -512,6 +524,9 @@ class SignInDetourTests(TestCase):
         self.assertIn("state=xyz", destination)
 
 
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
 class RevokingAConnectorTests(TestCase):
     """What revoking a connector's token in the panel has to take with it."""
 
@@ -565,3 +580,153 @@ class RevokingAConnectorTests(TestCase):
             f"/api/agents/{self.agent.pk}/tokens/{record.pk}/revoke/", secure=True
         )
         self.assertEqual(answer.status_code, 200)
+
+
+@override_settings(
+    CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+)
+class AbuseTests(TestCase):
+    """What an endpoint open to the whole internet has to withstand.
+
+    The rate is replaced on the throttle class rather than in the settings,
+    because the framework reads the configured rates once when the class is
+    defined.
+    """
+
+    def setUp(self):
+        """Start from an empty throttle with a rate small enough to hit."""
+        from unittest.mock import patch
+
+        from apps.oauth.views import RegistrationThrottle, TokenThrottle
+
+        cache.clear()
+        tight = {"oauth-register": "3/hour", "oauth-token": "3/hour"}
+        for throttle in (RegistrationThrottle, TokenThrottle):
+            patcher = patch.object(throttle, "THROTTLE_RATES", tight)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def register(self):
+        """Register a client the way a stranger scripting it would."""
+        return self.client.post(
+            reverse("oauth-register"),
+            json.dumps({"client_name": "x", "redirect_uris": [REDIRECT]}),
+            content_type="application/json",
+            secure=True,
+            REMOTE_ADDR="203.0.113.7",
+        )
+
+    def test_registering_is_rate_limited(self):
+        """A row per request is a table that grows with every stranger."""
+        for _ in range(3):
+            self.assertEqual(self.register().status_code, 201)
+        self.assertEqual(self.register().status_code, 429)
+
+    def test_the_token_endpoint_is_rate_limited(self):
+        """Nothing here can be guessed, but it can be hammered for free."""
+        for _ in range(3):
+            self.client.post(
+                reverse("oauth-token"), {"grant_type": "nonsense"}, secure=True,
+                REMOTE_ADDR="203.0.113.7",
+            )
+        answer = self.client.post(
+            reverse("oauth-token"), {"grant_type": "nonsense"}, secure=True,
+            REMOTE_ADDR="203.0.113.7",
+        )
+        self.assertEqual(answer.status_code, 429)
+
+
+class PruningTests(TestCase):
+    """What the flow throws away once it is done with it."""
+
+    def setUp(self):
+        """Register a client with one of everything the flow leaves behind."""
+        from apps.oauth.pruning import prune
+
+        self.prune = prune
+        self.agent = Agent.objects.create(name="hermes")
+        self.client_record = OAuthClient.objects.create(
+            name="Claude", redirect_uris=[REDIRECT], registered_dynamically=True
+        )
+        self.now = timezone.now()
+
+    def code(self, **fields):
+        """Record an authorization code with the given state."""
+        defaults = {
+            "code_hash": tokens.digest(tokens.mint()),
+            "client": self.client_record,
+            "agent": self.agent,
+            "redirect_uri": REDIRECT,
+            "code_challenge": "c",
+            "resource": "https://testserver/mcp",
+            "expires_at": self.now + timedelta(minutes=2),
+        }
+        defaults.update(fields)
+        return AuthorizationCode.objects.create(**defaults)
+
+    def test_a_code_that_expired_long_ago_goes(self):
+        """It can never be exchanged and holds nothing worth keeping."""
+        self.code(expires_at=self.now - timedelta(hours=2))
+        self.prune()
+        self.assertEqual(AuthorizationCode.objects.count(), 0)
+
+    def test_a_code_that_just_expired_is_kept_a_while(self):
+        """Its reuse still has to be recognised and answered."""
+        self.code(expires_at=self.now - timedelta(minutes=1))
+        self.prune()
+        self.assertEqual(AuthorizationCode.objects.count(), 1)
+
+    def test_a_client_that_never_completed_the_flow_goes_after_a_day(self):
+        """Anyone on the internet can register; only the owner can approve."""
+        OAuthClient.objects.filter(pk=self.client_record.pk).update(
+            created_at=self.now - timedelta(days=2)
+        )
+        self.prune()
+        self.assertEqual(OAuthClient.objects.count(), 0)
+
+    def test_a_client_holding_a_live_token_stays(self):
+        """It is in use, however long ago it registered."""
+        from apps.oauth.service import mint_pair
+
+        mint_pair(self.client_record, self.agent, "https://testserver/mcp")
+        OAuthClient.objects.filter(pk=self.client_record.pk).update(
+            created_at=self.now - timedelta(days=30)
+        )
+        self.prune()
+        self.assertEqual(OAuthClient.objects.count(), 1)
+
+    def test_a_client_the_owner_registered_by_hand_is_never_pruned(self):
+        """It was typed in on purpose, and nobody else can make it."""
+        OAuthClient.objects.filter(pk=self.client_record.pk).update(
+            registered_dynamically=False, created_at=self.now - timedelta(days=30)
+        )
+        self.prune()
+        self.assertEqual(OAuthClient.objects.count(), 1)
+
+    def test_a_withdrawn_token_is_kept_a_week_then_goes(self):
+        """The panel shows what happened to it, for a while."""
+        from apps.oauth.service import mint_pair
+
+        mint_pair(self.client_record, self.agent, "https://testserver/mcp")
+        AgentToken.objects.update(revoked_at=self.now - timedelta(days=8))
+        RefreshToken.objects.update(revoked_at=self.now - timedelta(days=8))
+        self.prune()
+        self.assertEqual(AgentToken.objects.count(), 0)
+        self.assertEqual(RefreshToken.objects.count(), 0)
+
+    def test_registering_prunes_on_the_way_in(self):
+        """Nobody has to remember to run anything for the table to stay small."""
+        OAuthClient.objects.filter(pk=self.client_record.pk).update(
+            created_at=self.now - timedelta(days=2)
+        )
+        with override_settings(
+            CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+        ):
+            cache.clear()
+            self.client.post(
+                reverse("oauth-register"),
+                json.dumps({"client_name": "new", "redirect_uris": [REDIRECT]}),
+                content_type="application/json",
+                secure=True,
+            )
+        self.assertFalse(OAuthClient.objects.filter(pk=self.client_record.pk).exists())
