@@ -8,8 +8,9 @@ from celery.exceptions import Retry
 from django.test import TestCase, override_settings
 from qdrant_client.http.exceptions import ResponseHandlingException, UnexpectedResponse
 
+from apps.common import media_types
 from apps.drive.models import PASSAGE, QUERY, Collection, Document, Folder, ProcessingStatus
-from apps.ingestion import chunking, embeddings, tasks
+from apps.ingestion import chunking, embeddings, extraction, tasks
 from apps.ingestion.embeddings import EmbeddingError, embed_texts
 from apps.ingestion.extraction import ExtractionError
 from apps.ingestion.failures import TransientFailure, is_transient
@@ -382,3 +383,155 @@ class WarmModelTests(TestCase):
             with self.assertLogs("apps.ingestion.embeddings", level="ERROR"):
                 loaded = embeddings.warm_local_models()
         self.assertEqual(loaded, [])
+
+
+class ReadableTypesTests(TestCase):
+    """Which files this build can turn into text, and what it says of the rest."""
+
+    def test_a_spreadsheet_is_readable(self):
+        """Price lists live in spreadsheets far more often than in prose."""
+        self.assertTrue(extraction.can_extract(media_types.EXCEL))
+
+    def test_sql_is_read_as_the_text_it_is(self):
+        """A schema is plain text under a name the type table does not know."""
+        self.assertTrue(extraction.can_extract("application/sql"))
+        self.assertEqual(extraction.extract_text(b"SELECT 1;", "application/sql"), "SELECT 1;")
+
+    def test_anything_under_text_is_readable(self):
+        """Markdown, csv, yaml as text/: there is nothing to extract, only to read."""
+        for kind in ("text/markdown", "text/csv", "text/x-python"):
+            self.assertTrue(extraction.can_extract(kind))
+
+    def test_a_binary_nobody_can_read_is_not(self):
+        """Offering to index it would only produce a failed job."""
+        self.assertFalse(extraction.can_extract("application/octet-stream"))
+        self.assertFalse(extraction.can_extract("application/zip"))
+
+    def test_the_old_binary_spreadsheet_is_readable(self):
+        """Half the spreadsheets in a company were saved before 2007."""
+        self.assertTrue(extraction.can_extract("application/vnd.ms-excel"))
+
+
+class SpreadsheetTests(TestCase):
+    """What a workbook becomes once it is text."""
+
+    def workbook(self, sheets):
+        """Build a workbook in memory from {title: rows}."""
+        import io
+
+        from openpyxl import Workbook
+
+        book = Workbook()
+        book.remove(book.active)
+        for title, rows in sheets.items():
+            sheet = book.create_sheet(title)
+            for row in rows:
+                sheet.append(row)
+        buffer = io.BytesIO()
+        book.save(buffer)
+        return buffer.getvalue()
+
+    def test_every_row_explains_itself(self):
+        """A row of bare figures halfway down a sheet says nothing on its own."""
+        data = self.workbook({"Planes": [["Plan", "Precio"], ["START", 189], ["PLUS", 270]]})
+        text = extraction.extract_excel(data)
+        self.assertIn("Plan: PLUS | Precio: 270", text)
+
+    def test_each_sheet_is_named(self):
+        """Which sheet a figure came from is often the whole question."""
+        data = self.workbook({"Tarifas": [["a"], [1]], "Contactos": [["b"], [2]]})
+        text = extraction.extract_excel(data)
+        self.assertIn("## Tarifas", text)
+        self.assertIn("## Contactos", text)
+
+    def test_empty_rows_and_cells_are_skipped(self):
+        """A sheet is mostly empty cells, and none of them is worth a token."""
+        data = self.workbook({"S": [["a", "b"], [None, None], [1, None]]})
+        text = extraction.extract_excel(data)
+        self.assertNotIn("b:", text)
+        self.assertEqual(text.strip().splitlines()[-1], "a: 1")
+
+    def test_each_record_is_its_own_paragraph(self):
+        """A chunk boundary prefers the end of a paragraph, so rows stay whole."""
+        data = self.workbook({"S": [["a"], [1], [2], [3]]})
+        self.assertEqual(extraction.extract_excel(data).count("\n\n"), 3)
+
+    def test_a_title_above_the_headings_is_not_taken_for_them(self):
+        """Real sheets start with a title row more often than not."""
+        data = self.workbook({"S": [["Tarifas de 2026"], ["Plan", "Precio"], ["START", 189]]})
+        self.assertIn("Plan: START | Precio: 189", extraction.extract_excel(data))
+
+    def test_two_columns_with_the_same_heading_stay_apart(self):
+        """Two columns called Total would otherwise read as one value twice."""
+        data = self.workbook({"S": [["Total", "Total"], [1, 2]]})
+        self.assertIn("Total: 1 | Total_1: 2", extraction.extract_excel(data))
+
+    def test_a_whole_number_stored_as_a_float_loses_its_decimal(self):
+        """Nobody searches for 270.0."""
+        data = self.workbook({"S": [["Precio"], [270.0], [19.5]]})
+        text = extraction.extract_excel(data)
+        self.assertIn("Precio: 270\n", text + "\n")
+        self.assertIn("Precio: 19.5", text)
+
+    def test_a_record_is_never_split_by_the_chunker(self):
+        """The colons inside a record must not read as sentence ends."""
+        rows = [["Plan", "Precio", "Nota"]] + [
+            [f"PLAN{i}", 100 + i, "una nota con varias palabras para llenar el trozo"] for i in range(60)
+        ]
+        text = extraction.extract_excel(self.workbook({"S": rows}))
+        for chunk in chunking.split_text(text, 40, 5):
+            for line in chunk.splitlines():
+                if line.startswith("Plan:"):
+                    self.assertIn("Precio:", line)
+                    self.assertIn("Nota:", line)
+
+
+
+class UpsertBatchTests(TestCase):
+    """How points are cut into requests the store's proxy will accept."""
+
+    def points(self, count, dimensions, text_length=500):
+        """Build points the way the writer does."""
+        from qdrant_client.http import models as qmodels
+
+        from apps.ingestion import vectors
+
+        return [
+            qmodels.PointStruct(
+                id=vectors.build_point_id("d", index),
+                vector=[0.0] * dimensions,
+                payload={"text": "x" * text_length, "document_id": "d", "folder_id": "f",
+                         "is_agent_active": True, "chunk_index": index},
+            )
+            for index in range(count)
+        ]
+
+    def test_a_wide_model_gets_smaller_batches_than_a_narrow_one(self):
+        """The same number of points is eight times the bytes at 3072 dimensions."""
+        from apps.ingestion.vectors import batches
+
+        narrow = list(batches(self.points(200, 384)))
+        wide = list(batches(self.points(200, 3072)))
+        self.assertGreater(len(wide), len(narrow))
+
+    def test_no_batch_passes_the_budget(self):
+        """That is the whole point; a 413 stores nothing."""
+        from apps.ingestion.vectors import CHARS_PER_DIMENSION, UPSERT_BATCH_BYTES, batches
+
+        for batch in batches(self.points(300, 3072)):
+            estimate = sum(len(p.vector) * CHARS_PER_DIMENSION + len(p.payload["text"]) + 256 for p in batch)
+            self.assertLessEqual(estimate, UPSERT_BATCH_BYTES)
+
+    def test_every_point_is_written_exactly_once(self):
+        """Losing a chunk at a batch boundary would be a silent hole in a document."""
+        from apps.ingestion.vectors import batches
+
+        written = [p.id for batch in batches(self.points(150, 3072)) for p in batch]
+        self.assertEqual(len(written), 150)
+        self.assertEqual(len(set(written)), 150)
+
+    def test_a_single_oversized_point_still_travels(self):
+        """Refusing it would drop a chunk with no error anyone sees."""
+        from apps.ingestion.vectors import batches
+
+        self.assertEqual(len(list(batches(self.points(1, 3072, text_length=600000)))), 1)

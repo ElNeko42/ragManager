@@ -29,13 +29,20 @@ const active = computed({
       </span>
     </span>
     <span @click.stop>
-      <BaseSwitch v-model="active" :label="t('drive.switchLabel')" />
+      <BaseSwitch v-if="document.is_indexable" v-model="active" :label="t('drive.switchLabel')" />
+      <span v-else class="unreadable" :title="t('drive.unreadableHint')">{{ t('drive.unreadable') }}</span>
     </span>
     <StatusBadge :progress="progressOf(document)" />
   </div>
 </template>
 
 <style scoped>
+.unreadable {
+  font-size: 11px;
+  color: var(--rm-muted);
+  white-space: nowrap;
+}
+
 .row {
   display: grid;
   grid-template-columns: var(--rm-doc-cols, minmax(80px, 1fr) 96px 120px);

@@ -208,7 +208,9 @@
     "switchHint": "Your intent",
     "switchLabel": "Available to agents",
     "tree": "Folder tree",
-    "viewLabel": "Layout"
+    "viewLabel": "Layout",
+    "unreadable": "Not indexable",
+    "unreadableHint": "This build cannot read files of this type, so there is nothing to index. It is stored and can be downloaded."
   },
   "errors": {
     "conflict": "That name is already taken.",

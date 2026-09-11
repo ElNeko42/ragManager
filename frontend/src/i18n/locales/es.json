@@ -208,7 +208,9 @@
     "switchHint": "Tu intención",
     "switchLabel": "Disponible para agentes",
     "tree": "Árbol de carpetas",
-    "viewLabel": "Disposición"
+    "viewLabel": "Disposición",
+    "unreadable": "No indexable",
+    "unreadableHint": "Esta instalación no sabe leer ficheros de este tipo, así que no hay nada que indexar. Se guarda y se puede descargar."
   },
   "errors": {
     "conflict": "Ese nombre ya está ocupado.",

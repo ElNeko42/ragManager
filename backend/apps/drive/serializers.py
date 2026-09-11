@@ -7,6 +7,7 @@ from apps.common import secrets
 from apps.common.fields import OptionalUUIDField
 from apps.drive.models import Collection, Document, EmbeddingProvider, Folder
 from apps.drive.services import is_within
+from apps.ingestion.extraction import can_extract
 from apps.ingestion.models import ProcessingJob
 
 MIN_CHUNK_WORDS = 20
@@ -269,6 +270,8 @@ class FolderUpdateSerializer(serializers.Serializer):
 
 
 class DocumentSerializer(serializers.ModelSerializer):
+    is_indexable = serializers.SerializerMethodField()
+
     class Meta:
         model = Document
         fields = (
@@ -280,11 +283,20 @@ class DocumentSerializer(serializers.ModelSerializer):
             "revision",
             "processing_status",
             "is_agent_active",
+            "is_indexable",
             "chunk_count",
             "created_at",
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_is_indexable(self, document):
+        """Report whether this build can read the file at all.
+
+        The panel offers the switch only when it can, so that a file nobody
+        can read is never queued to fail an hour later.
+        """
+        return can_extract(document.content_type)
 
 
 class DocumentDetailSerializer(DocumentSerializer):
@@ -312,7 +324,11 @@ class DocumentUpdateSerializer(serializers.Serializer):
     is_agent_active = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
-        """Reject a name already taken inside the destination folder."""
+        """Reject a clashing name, and a switch on a file nobody can read.
+
+        Queueing a file this build cannot read fails an hour later with the
+        owner none the wiser; refusing here says so while they are looking.
+        """
         document = self.instance
         folder = attrs.get("folder", document.folder)
         name = attrs.get("name", document.name)
@@ -320,6 +336,15 @@ class DocumentUpdateSerializer(serializers.Serializer):
         if clash.exists():
             raise serializers.ValidationError(
                 {"name": "A document with this name already exists in that folder"}
+            )
+        if attrs.get("is_agent_active") and not can_extract(document.content_type):
+            raise serializers.ValidationError(
+                {
+                    "is_agent_active": (
+                        f"Files of type {document.content_type} cannot be read by this "
+                        "build, so there is nothing to index"
+                    )
+                }
             )
         return attrs
 

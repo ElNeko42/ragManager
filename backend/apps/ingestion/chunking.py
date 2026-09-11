@@ -3,7 +3,9 @@
 import re
 
 PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
-SENTENCE_END = re.compile(r"(?<=[.!?;:])[ \t]")
+# A colon or a semicolon does not end a sentence; it introduces what follows,
+# and a record written as "heading: value" would be cut apart at every one.
+SENTENCE_END = re.compile(r"(?<=[.!?])[ \t]")
 OVERLAP_ALLOWANCE = 1.5
 
 

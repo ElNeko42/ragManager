@@ -13,7 +13,6 @@ from apps.ingestion import services as ingestion
 
 logger = logging.getLogger(__name__)
 
-KNOWN_SUFFIX_MEDIA_TYPES = {".docx": media_types.WORD}
 
 
 def resolve_content_type(upload_file, name):
@@ -23,17 +22,17 @@ def resolve_content_type(upload_file, name):
     disagree about the type they send for office formats and many send the
     generic binary type, which would leave the pipeline unable to pick an
     extractor for a file it can perfectly well read, so an uninformative
-    value is replaced by the one the extension implies. The office suffixes
-    are listed here rather than left to the interpreter, whose table is
-    populated from an operating system file that slim images do not ship.
-    Returns the media type.
+    value is replaced by the one the extension implies. The common suffixes
+    are listed rather than left to the interpreter, whose table is populated
+    from an operating system file that slim images do not ship. Returns the
+    media type.
     """
     declared = upload_file.content_type or ""
     if declared and declared != media_types.GENERIC:
         return declared
     suffix = Path(name).suffix.lower()
-    if suffix in KNOWN_SUFFIX_MEDIA_TYPES:
-        return KNOWN_SUFFIX_MEDIA_TYPES[suffix]
+    if suffix in media_types.BY_SUFFIX:
+        return media_types.BY_SUFFIX[suffix]
     guessed, _ = mimetypes.guess_type(name)
     return guessed or media_types.GENERIC
 

@@ -120,9 +120,10 @@ function commitRename(): void {
       <div class="gate">
         <span class="labels">
           <strong>{{ t('drive.switchLabel') }}</strong>
-          <span class="hint">{{ t('drive.switchHint') }}</span>
+          <span class="hint">{{ document.is_indexable ? t('drive.switchHint') : t('drive.unreadableHint') }}</span>
         </span>
-        <BaseSwitch v-model="active" :label="t('drive.switchLabel')" />
+        <BaseSwitch v-if="document.is_indexable" v-model="active" :label="t('drive.switchLabel')" />
+        <span v-else class="unreadable">{{ t('drive.unreadable') }}</span>
       </div>
 
       <div class="rule" />
@@ -194,6 +195,12 @@ function commitRename(): void {
 </template>
 
 <style scoped>
+.unreadable {
+  font-size: 12px;
+  color: var(--rm-muted);
+  white-space: nowrap;
+}
+
 .moving {
   display: flex;
   flex-direction: column;

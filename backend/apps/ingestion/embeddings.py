@@ -13,6 +13,10 @@ from apps.drive.models import PASSAGE, EmbeddingProvider
 logger = logging.getLogger(__name__)
 
 API_TIMEOUT_SECONDS = 120
+# Texts sent to an endpoint per request. Providers cap both the number of
+# inputs and the tokens in one call, and a document of a few hundred chunks
+# sent whole trips either; the local model batches on its own.
+API_BATCH_SIZE = 64
 _loaded_models = {}
 _loading_lock = threading.Lock()
 

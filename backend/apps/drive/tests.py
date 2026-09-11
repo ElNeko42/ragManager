@@ -827,3 +827,64 @@ class CollectionTuningEndpointTests(TestCase):
         body = self.client.get(f"/api/collections/{self.collection.pk}/", secure=True).json()
         self.assertIsNone(body["max_tokens"])
         self.assertIsNone(body["minimum_score"])
+
+
+class UnreadableFileTests(TestCase):
+    """What the API does with a file this build cannot turn into text."""
+
+    def setUp(self):
+        """Sign in as the owner with an archive nobody can read stored."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="pw-8x-forest"
+        )
+        self.client.force_login(self.owner)
+        self.root = Folder.objects.get(parent__isnull=True)
+        self.archive = Document.objects.create(
+            folder=self.root, name="backup.zip", content_type="application/zip",
+            size_bytes=10, storage_key="documents/backup.zip",
+        )
+        self.schema = Document.objects.create(
+            folder=self.root, name="schema.sql", content_type="application/sql",
+            size_bytes=10, storage_key="documents/schema.sql",
+        )
+
+    def read(self, document):
+        """Read one document back the way the panel does."""
+        return self.client.get(f"/api/documents/{document.pk}/", secure=True).json()
+
+    def switch_on(self, document):
+        """Switch a document on for agents."""
+        return self.client.patch(
+            f"/api/documents/{document.pk}/", {"is_agent_active": True},
+            content_type="application/json", secure=True,
+        )
+
+    def test_the_listing_says_whether_a_file_can_be_indexed(self):
+        """The panel decides whether to offer the switch from this."""
+        self.assertFalse(self.read(self.archive)["is_indexable"])
+        self.assertTrue(self.read(self.schema)["is_indexable"])
+
+    @patch("apps.drive.services.ingestion")
+    def test_a_file_nobody_can_read_cannot_be_switched_on(self, ingestion):
+        """Queueing it fails an hour later with the owner none the wiser."""
+        answer = self.switch_on(self.archive)
+        self.assertEqual(answer.status_code, 400)
+        self.assertIn("is_agent_active", answer.json())
+        ingestion.enqueue.assert_not_called()
+
+    @patch("apps.drive.services.ingestion")
+    def test_a_file_that_is_text_under_another_name_can_be(self, ingestion):
+        """A schema is plain text; the type table just does not know its name."""
+        self.assertEqual(self.switch_on(self.schema).status_code, 200)
+        ingestion.enqueue.assert_called_once()
+
+    @patch("apps.drive.services.storage.upload")
+    @patch("apps.drive.services.storage.build_key", return_value="documents/x")
+    def test_an_upload_the_browser_calls_binary_is_recognised_by_its_name(self, key, upload):
+        """Browsers send the generic type for .sql and .xlsx alike."""
+        upload_file = SimpleUploadedFile("datos.xlsx", b"x", content_type="application/octet-stream")
+        answer = self.client.post(
+            "/api/documents/", {"file": upload_file, "folder": str(self.root.pk)}, secure=True
+        )
+        self.assertEqual(answer.json()["content_type"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertTrue(answer.json()["is_indexable"])

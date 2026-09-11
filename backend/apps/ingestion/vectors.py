@@ -8,6 +8,15 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 POINT_NAMESPACE = uuid.UUID("6f1d5a7e-8c3b-4f2a-9d61-2b7e4c0a8f35")
+
+# Points are written in batches bounded by size rather than by count. A point
+# is its vector written out as text, thirteen or so characters per dimension,
+# plus the chunk itself: five kilobytes for a small model and forty for a
+# wide one. A proxy in front of the store commonly refuses a body over a
+# megabyte, so a batch of sixty four points was fine for one model and 2 MB
+# for another, and the answer was 413 with nothing stored.
+UPSERT_BATCH_BYTES = 512 * 1024
+CHARS_PER_DIMENSION = 13
 REQUEST_TIMEOUT_SECONDS = 30
 
 _client = None
@@ -124,7 +133,30 @@ def upsert_chunks(collection_name, document, chunks, vectors):
         )
         for index, (chunk, vector) in enumerate(zip(chunks, vectors))
     ]
-    get_client().upsert(collection_name=collection_name, points=points, wait=True)
+    client = get_client()
+    for batch in batches(points):
+        client.upsert(collection_name=collection_name, points=batch, wait=True)
+
+
+def batches(points):
+    """Cut points into batches that a proxy will let through.
+
+    Takes the points. Yields lists whose written size stays under the budget,
+    estimated from the vector width and the chunk length, since the exact
+    size is not known until the client has serialised it. A single point
+    larger than the budget travels alone and takes its chances.
+    """
+    batch = []
+    size = 0
+    for point in points:
+        weight = len(point.vector) * CHARS_PER_DIMENSION + len(point.payload["text"]) + 256
+        if batch and size + weight > UPSERT_BATCH_BYTES:
+            yield batch
+            batch, size = [], 0
+        batch.append(point)
+        size += weight
+    if batch:
+        yield batch
 
 
 def set_document_payload(collection_name, document_id, values):

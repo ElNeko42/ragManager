@@ -30,7 +30,8 @@ const active = computed({
     </div>
     <div class="foot">
       <span @click.stop>
-        <BaseSwitch v-model="active" :label="t('drive.switchLabel')" />
+        <BaseSwitch v-if="document.is_indexable" v-model="active" :label="t('drive.switchLabel')" />
+        <span v-else class="unreadable" :title="t('drive.unreadableHint')">{{ t('drive.unreadable') }}</span>
       </span>
       <StatusBadge :progress="progressOf(document)" />
     </div>
@@ -38,6 +39,12 @@ const active = computed({
 </template>
 
 <style scoped>
+.unreadable {
+  font-size: 11px;
+  color: var(--rm-muted);
+  white-space: nowrap;
+}
+
 .card {
   display: flex;
   flex-direction: column;

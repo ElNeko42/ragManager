@@ -21,6 +21,7 @@ export interface Document {
   revision: number
   processing_status: ProcessingStatus
   is_agent_active: boolean
+  is_indexable: boolean
   chunk_count: number
   created_at: string
   updated_at: string

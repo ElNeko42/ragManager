@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from apps.accounts.permissions import IsOwner
 from apps.drive import services, storage
 from apps.drive.models import Collection, Document, Folder
+from apps.ingestion.extraction import can_extract
 from apps.drive.serializers import (
     CollectionCreateSerializer,
     CollectionSerializer,
@@ -266,6 +267,11 @@ class DocumentViewSet(mixins.ListModelMixin, OwnerViewSet):
         if not document.is_agent_active:
             return Response(
                 {"detail": "Switch the document on for agents before queueing it"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if not can_extract(document.content_type):
+            return Response(
+                {"detail": f"Files of type {document.content_type} cannot be read by this build"},
                 status=status.HTTP_409_CONFLICT,
             )
         with transaction.atomic():

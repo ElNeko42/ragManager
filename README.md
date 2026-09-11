@@ -199,6 +199,29 @@ If any of those ports is already taken on the host, change the matching
 `*_HOST_PORT` value in `.env`. Only the published side moves; the containers
 keep talking to each other on their standard ports.
 
+## What can be indexed
+
+| Format | How it is read |
+| --- | --- |
+| PDF | Its text layer; a scanned one goes through OCR, or a vision endpoint if configured |
+| Word (`.docx`) | Paragraphs and table cells |
+| Excel (`.xlsx`, `.xlsm`, `.xls`) | Every sheet, one record per row, each cell written as `heading: value` so a row halfway down a sheet still says what its figures are. The heading row is found rather than assumed, since a title often sits above it; computed values are read, not formulas |
+| Images | OCR, or a vision endpoint if configured |
+| Anything that is text | Read as is: `.txt`, `.md`, `.csv`, `.json`, `.xml`, `.yaml`, `.sql`, source code |
+
+Everything else is stored and can be downloaded, but the panel offers no
+switch for it and the API refuses to switch it on, saying why. Queueing a file
+nobody can read would only fail an hour later with the owner none the wiser.
+
+Points are written to Qdrant sixty four at a time and texts sent to an
+embedding endpoint in the same batches. A spreadsheet of a few hundred rows
+sent in one request is a body over a megabyte, which is where a proxy in front
+of the store draws the line and answers 413 with nothing stored.
+
+A browser uploading `.sql` or `.xlsx` usually declares the generic binary
+type, and the interpreter's own table does not know those suffixes on a slim
+image, so the type is taken from the suffix in those cases.
+
 ## How text is split
 
 A document is embedded in pieces, and the size of a piece is the setting that
