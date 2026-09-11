@@ -35,6 +35,11 @@ class ChunkingValidationMixin:
             raise serializers.ValidationError(
                 {"chunk_overlap_words": "The overlap has to be smaller than the chunk"}
             )
+        bar = attrs.get("minimum_score", getattr(instance, "minimum_score", None))
+        if bar is not None and not -1 <= bar <= 1:
+            raise serializers.ValidationError(
+                {"minimum_score": "A cosine similarity runs from -1 to 1"}
+            )
         return attrs
 
 
@@ -91,6 +96,8 @@ class CollectionSerializer(serializers.ModelSerializer):
             "is_default",
             "chunk_words",
             "chunk_overlap_words",
+            "max_tokens",
+            "minimum_score",
             "query_prefix",
             "passage_prefix",
             "has_api_key",
@@ -174,6 +181,8 @@ class CollectionUpdateSerializer(
             "is_default",
             "chunk_words",
             "chunk_overlap_words",
+            "max_tokens",
+            "minimum_score",
             "query_prefix",
             "passage_prefix",
             "api_key",

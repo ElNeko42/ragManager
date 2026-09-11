@@ -14,7 +14,12 @@ from apps.ingestion.embeddings import EmbeddingError
 from apps.ingestion import vectors
 from apps.accounts.models import User
 from apps.search.models import AgentQuery, QuerySource
-from apps.search.service import confirm_against_database, fuse, narrow_to_folder
+from apps.search.service import (
+    build_result,
+    confirm_against_database,
+    fuse,
+    narrow_to_folder,
+)
 from apps.search.views import SearchThrottle
 
 
@@ -384,3 +389,63 @@ class QueryLogTests(TestCase):
         self.client.force_login(owner)
         response = self.client.get("/api/search/log/?agent=nonsense", secure=True)
         self.assertEqual(response.status_code, 400)
+
+
+class RelevanceBarTests(TestCase):
+    """Keeping a search from answering a question the store knows nothing about."""
+
+    def setUp(self):
+        """Take the collection the instance was installed with."""
+        self.collection = Collection.objects.get(is_default=True)
+
+    def test_a_collection_without_a_bar_returns_everything(self):
+        """This is where every instance starts, and it must not change under it."""
+        self.assertTrue(self.collection.clears_the_bar(0.01))
+
+    def test_a_hit_below_the_bar_is_dropped(self):
+        """Closest is not relevant, and an agent has no way to tell the difference."""
+        self.collection.minimum_score = 0.6
+        self.assertFalse(self.collection.clears_the_bar(0.52))
+
+    def test_a_hit_on_the_bar_is_kept(self):
+        """The bar is a floor to clear, not one to beat."""
+        self.collection.minimum_score = 0.6
+        self.assertTrue(self.collection.clears_the_bar(0.6))
+
+    def test_the_bar_belongs_to_the_collection(self):
+        """Every model scores on its own scale, so one number cannot serve both."""
+        other = Collection.objects.create(
+            name="other-model",
+            provider=self.collection.provider,
+            model_name="another-model",
+            vector_size=384,
+            minimum_score=0.9,
+        )
+        self.collection.minimum_score = 0.2
+        self.assertTrue(self.collection.clears_the_bar(0.3))
+        self.assertFalse(other.clears_the_bar(0.3))
+
+
+class ResultShapeTests(TestCase):
+    """What a caller is told about how good a passage is."""
+
+    def setUp(self):
+        """Take a collection to attribute the hits to."""
+        self.collection = Collection.objects.get(is_default=True)
+
+    def build(self, score, rank):
+        """Build one result the way the search does."""
+        payload = {"document_id": "d", "folder_id": "f", "chunk_index": 0, "text": "t"}
+        return build_result(payload, score, self.collection, rank)
+
+    def test_a_result_says_where_it_stood_in_its_own_collection(self):
+        """A score from another model is not something to compare it against."""
+        self.assertEqual(self.build(0.44, 2)["rank_in_collection"], 2)
+
+    def test_a_result_still_carries_the_score_its_collection_gave_it(self):
+        """Hiding it would cost a reader the one comparison that is valid."""
+        self.assertEqual(self.build(0.44, 2)["score"], 0.44)
+
+    def test_a_result_names_the_collection_the_score_belongs_to(self):
+        """Without it there is no way to know which scores may be compared."""
+        self.assertEqual(self.build(0.44, 1)["collection"], self.collection.name)

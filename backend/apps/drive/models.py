@@ -60,6 +60,8 @@ class Collection(models.Model):
     chunk_words = models.PositiveIntegerField(null=True, blank=True)
     chunk_overlap_words = models.PositiveIntegerField(null=True, blank=True)
     encrypted_api_key = models.TextField(blank=True, default="")
+    max_tokens = models.PositiveIntegerField(null=True, blank=True)
+    minimum_score = models.FloatField(null=True, blank=True)
     query_prefix = models.CharField(max_length=100, blank=True, default="")
     passage_prefix = models.CharField(max_length=100, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -101,6 +103,19 @@ class Collection(models.Model):
     def __str__(self):
         """Return the collection name."""
         return self.name
+
+    def clears_the_bar(self, score):
+        """Report whether a hit is close enough to be worth returning.
+
+        Takes the similarity its own collection gave it. A search always
+        returns its closest matches, and closest is not the same as relevant:
+        asked for something the store knows nothing about, it answers with
+        whatever was least unlike the question, and an agent with no way to
+        tell reads it as an answer. The bar belongs to the collection because
+        every model scores on its own scale, and a collection without one
+        returns everything, which is where this started.
+        """
+        return self.minimum_score is None or score >= self.minimum_score
 
     def prefix_for(self, kind):
         """Return the words a model expects in front of a text it is given.

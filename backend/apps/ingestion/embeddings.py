@@ -35,6 +35,33 @@ def get_local_model(model_name):
     return _loaded_models[model_name]
 
 
+def reader_limits(collection):
+    """Return how much of a chunk this collection's model will actually read.
+
+    Takes the collection. Returns a (token budget, counter) pair, or a pair of
+    Nones for a model this process cannot ask.
+
+    A model reads so many tokens and ignores the rest without complaining, so
+    a chunk longer than that is stored and returned in full while only its
+    opening influenced the vector: the passage that answers the question is
+    there and scores badly. How many words that is depends on the language as
+    much as on the model, which is why it is measured rather than assumed. A
+    model running in this process can be asked directly; one behind an
+    endpoint cannot, and falls back to whatever the collection was told.
+    """
+    if collection.provider != EmbeddingProvider.LOCAL:
+        return collection.max_tokens, None
+    model = get_local_model(collection.model_name)
+    budget = collection.max_tokens or model.max_seq_length
+    tokenizer = model.tokenizer
+
+    def count(text):
+        """Return how many tokens this model spends on a piece of text."""
+        return len(tokenizer.encode(text, add_special_tokens=False))
+
+    return budget, count
+
+
 def embed_texts(collection, texts, kind=PASSAGE):
     """Embed a list of texts with the model bound to a collection.
 

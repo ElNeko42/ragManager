@@ -788,3 +788,42 @@ class DocumentRequestBodyTests(TestCase):
             secure=True,
         )
         self.assertEqual(response.status_code, 200)
+
+
+class CollectionTuningEndpointTests(TestCase):
+    """The two settings that decide what a model reads and what is returned."""
+
+    def setUp(self):
+        """Sign in as the owner with the collection the instance ships with."""
+        self.owner = get_user_model().objects.create_user(
+            email="owner@example.com", password="pw-8x-forest"
+        )
+        self.client.force_login(self.owner)
+        self.collection = Collection.objects.get(is_default=True)
+
+    def change(self, **payload):
+        """Change the collection the way the panel would."""
+        return self.client.patch(
+            f"/api/collections/{self.collection.pk}/",
+            payload,
+            content_type="application/json",
+            secure=True,
+        )
+
+    def test_the_token_budget_can_be_set(self):
+        """A model behind an endpoint cannot be asked, so it has to be told."""
+        self.assertEqual(self.change(max_tokens=512).json()["max_tokens"], 512)
+
+    def test_the_relevance_bar_can_be_set(self):
+        """Every model scores on its own scale, so the bar belongs to it."""
+        self.assertEqual(self.change(minimum_score=0.45).json()["minimum_score"], 0.45)
+
+    def test_a_bar_outside_the_range_of_a_similarity_is_refused(self):
+        """A bar of 12 silently returns nothing at all, for ever."""
+        self.assertEqual(self.change(minimum_score=12).status_code, 400)
+
+    def test_both_are_empty_until_somebody_sets_them(self):
+        """An instance that was working must not change under its owner."""
+        body = self.client.get(f"/api/collections/{self.collection.pk}/", secure=True).json()
+        self.assertIsNone(body["max_tokens"])
+        self.assertIsNone(body["minimum_score"])

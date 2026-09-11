@@ -286,3 +286,73 @@ class PrefixTests(TestCase):
         self.assertEqual(
             self.embed(["one", "two"], PASSAGE), ["passage: one", "passage: two"]
         )
+
+
+class TokenBudgetTests(TestCase):
+    """Keeping a chunk inside what the model will actually read."""
+
+    def count(self, text):
+        """Stand in for a tokeniser that spends two tokens on every word."""
+        return len(text.split()) * 2
+
+    def test_no_chunk_passes_the_budget(self):
+        """Everything past it is stored and returned but never embedded."""
+        text = ". ".join("palabra " * 20 for _ in range(40))
+        for chunk in chunking.split_text(text, 500, 50, max_tokens=100, count_tokens=self.count):
+            self.assertLessEqual(self.count(chunk), 100)
+
+    def test_the_budget_closes_a_chunk_before_the_word_target_does(self):
+        """A word count is a guess at the budget; the budget is the real limit."""
+        text = ". ".join("palabra " * 20 for _ in range(40))
+        loose = chunking.split_text(text, 500, 50)
+        tight = chunking.split_text(text, 500, 50, max_tokens=100, count_tokens=self.count)
+        self.assertGreater(len(tight), len(loose))
+
+    def test_a_sentence_costing_more_than_the_budget_is_cut(self):
+        """Otherwise it becomes one chunk that no model reads to the end."""
+        text = " ".join(["palabra"] * 400)
+        for chunk in chunking.split_text(text, 500, 50, max_tokens=100, count_tokens=self.count):
+            self.assertLessEqual(self.count(chunk), 100)
+
+    def test_the_ratio_is_taken_from_the_text_rather_than_assumed(self):
+        """Spanish costs a model trained on English far more tokens per word."""
+        text = " ".join(["palabra"] * 200)
+        expensive = chunking.split_text(
+            text, 500, 0, max_tokens=100, count_tokens=lambda t: len(t.split()) * 5
+        )
+        cheap = chunking.split_text(
+            text, 500, 0, max_tokens=100, count_tokens=lambda t: len(t.split())
+        )
+        self.assertGreater(len(expensive), len(cheap))
+
+    def test_without_a_counter_nothing_changes(self):
+        """A model behind an endpoint cannot be asked, and must still work."""
+        text = ". ".join("palabra " * 20 for _ in range(10))
+        self.assertTrue(chunking.split_text(text, 100, 20))
+
+
+class StructureTests(TestCase):
+    """What a chunk keeps of the way the document was written."""
+
+    def test_line_breaks_survive(self):
+        """A price list flattened into one line is a price list nobody can read."""
+        text = "Planes\n\nSTART: 189 euros.\nPLUS: 270 euros.\nPROFESSIONAL: 460 euros."
+        self.assertIn("\n", chunking.split_text(text, 100, 20)[0])
+
+    def test_a_chunk_is_cut_from_the_document_rather_than_rebuilt(self):
+        """Rebuilding it from words loses every list, heading and table."""
+        text = "Titulo\n\n- uno\n- dos\n- tres"
+        self.assertIn("- uno\n- dos", chunking.split_text(text, 100, 20)[0])
+
+    def test_the_overlap_stays_near_what_was_asked_for(self):
+        """Every word repeated is a word the reader pays for twice."""
+        text = ". ".join(f"frase numero {index} con su relleno correspondiente" for index in range(60))
+        chunks = chunking.split_text(text, 60, 10)
+        for first, second in zip(chunks, chunks[1:]):
+            words = first.split()
+            repeated = next(
+                (k for k in range(min(len(words), len(second.split())), 0, -1)
+                 if words[-k:] == second.split()[:k]),
+                0,
+            )
+            self.assertLessEqual(repeated, 20)

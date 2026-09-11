@@ -52,7 +52,17 @@ def catalogue():
                 "Search every document this agent is allowed to read and return the "
                 "passages that best answer the query. Results carry the text itself, "
                 "so a further fetch is not needed. Documents the owner has not granted "
-                "to this agent are never searched and never mentioned."
+                "to this agent are never searched and never mentioned.\n\n"
+                "Passages may come from several collections, each indexed by a "
+                "different embedding model. A score is only meaningful against other "
+                "passages from the same collection: 0.44 from one model is not worse "
+                "than 0.61 from another, because the two are not on the same scale. "
+                "Compare rank_in_collection instead, and treat the order they arrive "
+                "in as the answer to which passages are best.\n\n"
+                "A search always returns its closest matches, and closest is not the "
+                "same as relevant: asked about something this store knows nothing "
+                "about, it answers with whatever was least unlike the question. Read "
+                "the passages before trusting that they answer it."
             ),
             "inputSchema": {
                 "type": "object",

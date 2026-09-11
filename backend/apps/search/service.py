@@ -71,7 +71,13 @@ def run(agent, query, limit, folder_id, folder):
             vectors.access_filter(scope["folders"], scope["documents"], scope["denied_documents"]),
             limit * POOL_FACTOR,
         )
-        ranked.append([build_result(payload, score, collection) for payload, score in hits])
+        close_enough = [(payload, score) for payload, score in hits if collection.clears_the_bar(score)]
+        ranked.append(
+            [
+                build_result(payload, score, collection, position + 1)
+                for position, (payload, score) in enumerate(close_enough)
+            ]
+        )
     pool = fuse(ranked, limit * POOL_FACTOR)
     return confirm_against_database(pool, access)[:limit], len(ranked)
 
@@ -133,14 +139,22 @@ def narrow_to_folder(access, folder):
     return narrowed
 
 
-def build_result(payload, score, collection):
-    """Turn one Qdrant hit into the shape the callers of the search expect."""
+def build_result(payload, score, collection, rank):
+    """Turn one Qdrant hit into the shape the callers of the search expect.
+
+    The rank travels beside the score because the score alone misleads once
+    more than one collection has been consulted: a reader comparing a 0.44
+    from one model against a 0.61 from another is comparing two scales that
+    have nothing to do with each other. The rank says where a passage stood
+    among the ones it can actually be compared against.
+    """
     return {
         "document_id": payload["document_id"],
         "folder_id": payload["folder_id"],
         "chunk_index": payload["chunk_index"],
         "text": payload["text"],
         "score": score,
+        "rank_in_collection": rank,
         "collection": collection.name,
     }
 

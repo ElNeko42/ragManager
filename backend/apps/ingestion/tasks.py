@@ -38,7 +38,7 @@ def process_document(self, job_id):
     to spend that. A run that overruns its budget is stopped and recorded the
     same way, so one unreadable scan cannot hold the only worker forever.
     """
-    from apps.ingestion.embeddings import embed_texts
+    from apps.ingestion.embeddings import embed_texts, reader_limits
 
     job = ProcessingJob.objects.select_related("document__folder__collection").get(pk=job_id)
     document = job.document
@@ -47,7 +47,10 @@ def process_document(self, job_id):
     try:
         data = storage.open_stream(document.storage_key).read()
         text = extraction.extract_text(data, document.content_type)
-        chunks = chunking.split_text(text, *collection.chunking_plan())
+        budget, count_tokens = reader_limits(collection)
+        chunks = chunking.split_text(
+            text, *collection.chunking_plan(), max_tokens=budget, count_tokens=count_tokens
+        )
         vectors.ensure_collection(collection)
         vectors.delete_document_points(collection.name, document.pk)
         if chunks:
