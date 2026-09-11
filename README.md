@@ -160,6 +160,22 @@ empty for a model that was never trained on them. They live on the collection
 because they belong to the model, which keeps a table of vendors and their
 habits out of this project.
 
+### The size that actually matters is tokens, not words
+
+A word count is a stand-in for the real limit, and a poor one: a model trained
+on English spends far more tokens per word on Spanish than on the text it was
+measured with. On this instance a 228 word chunk cost 620 tokens against a
+model that reads 256, so three fifths of every chunk was stored, returned and
+never embedded — which is how a telephone number sitting at the end of a chunk
+ends up behind passages about something else entirely.
+
+A collection whose model runs in this process is asked directly how much it
+reads and how many tokens a piece of text costs, so nothing has to be assumed
+about the language. One behind an endpoint cannot be asked and uses
+`max_tokens` if it was told. The word count is a target the chunk may overshoot
+to reach a sentence boundary; the token budget is a ceiling it never passes,
+because everything past it is text nobody reads.
+
 `CHUNK_WORDS` and `CHUNK_OVERLAP_WORDS` set the instance default. A collection
 may name its own size, which is where it belongs, since the limit is the
 model's rather than the instance's. Chunks are closed at a paragraph or a
@@ -175,6 +191,25 @@ reprocess route does:
 curl -X POST -b cookies.txt -H "X-CSRFToken: $TOKEN" \
   https://your.host/api/documents/<id>/reprocess/
 ```
+
+## Telling a near miss from an answer
+
+A search returns its closest matches, and closest is not the same as relevant.
+Asked about something the store knows nothing about, it answers with whatever
+was least unlike the question, and an agent with no way to tell reads that as
+an answer. `minimum_score` on a collection is the floor a passage has to
+clear. It belongs to the collection because every model scores on its own
+scale: on this instance a query about nothing at all scored up to 0.39 against
+one model and 0.52 against another, while real answers started at 0.59 and
+0.69 respectively. Measure yours the same way before setting it, and leave it
+empty to return everything, which is what an instance does until somebody
+decides otherwise.
+
+For the same reason a result carries `rank_in_collection` beside its `score`.
+A reader comparing 0.44 from one model against 0.61 from another is comparing
+two scales that have nothing to do with each other; the rank says where a
+passage stood among the ones it can be compared against. The tool description
+says so too, since the reader is usually a model.
 
 ## When something in the queue is down
 
