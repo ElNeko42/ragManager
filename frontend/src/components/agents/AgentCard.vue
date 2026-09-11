@@ -15,6 +15,7 @@ const emit = defineEmits<{
   revoke: [tokenId: string]
   remove: []
   simulate: []
+  connect: []
 }>()
 
 const { t } = useI18n()
@@ -83,6 +84,10 @@ const rules = computed(() => {
       <BaseButton @click="emit('issue')">
         <BaseIcon name="key" :size="16" />
         {{ t('agents.newToken') }}
+      </BaseButton>
+      <BaseButton @click="emit('connect')">
+        <BaseIcon name="link" :size="16" />
+        {{ t('agents.connect') }}
       </BaseButton>
     </div>
 

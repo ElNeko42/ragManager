@@ -1,5 +1,6 @@
 """Endpoints that manage agents and issue their bearer tokens."""
 
+from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -69,6 +70,19 @@ class AgentViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         """
         self.get_object().delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["get"], url_path="connection", url_name="connection")
+    def connection(self, request):
+        """Return the address an agent connects its MCP client to.
+
+        The panel cannot work this out for itself: it is served from the same
+        host as the API in production but from a development server in front of
+        it otherwise, and the MCP endpoint is not the one it would guess in the
+        second case. Built from the request, so an instance behind a proxy
+        reports the address its agents can actually reach rather than the one
+        the container sees.
+        """
+        return Response({"url": request.build_absolute_uri(settings.MCP_PATH)})
 
     @action(detail=False, methods=["get"], url_path="me", url_name="identity")
     def identity(self, request):

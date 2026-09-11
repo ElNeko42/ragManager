@@ -25,6 +25,16 @@ export interface CreatedAgent extends IssuedToken {
 }
 
 /**
+ * Returns the address an agent points its MCP client at.
+ *
+ * The panel cannot work it out for itself: in production it is served from the
+ * same host as the API, and behind a development server it is not.
+ */
+export function readConnectionUrl(): Promise<{ url: string }> {
+  return request<{ url: string }>('/api/agents/connection/')
+}
+
+/**
  * Returns every agent registered on this instance.
  */
 export function listAgents(): Promise<Agent[]> {

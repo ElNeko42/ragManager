@@ -13,8 +13,10 @@ import BaseModal from '../components/ui/BaseModal.vue'
 import BaseSpinner from '../components/ui/BaseSpinner.vue'
 import UnsavedGuard from '../components/ui/UnsavedGuard.vue'
 import AgentCard from '../components/agents/AgentCard.vue'
+import McpConnection from '../components/agents/McpConnection.vue'
 import TokenReveal from '../components/agents/TokenReveal.vue'
 import { useAction } from '../composables/useAction'
+import { readConnectionUrl } from '../api/agents'
 import { useAgentsStore } from '../stores/agents'
 
 const { t } = useI18n()
@@ -27,6 +29,8 @@ const expiry = ref('')
 const { busy, failure, run, clear } = useAction()
 
 const reveal = ref<{ token: string; agentName: string } | null>(null)
+const connecting = ref<string | null>(null)
+const mcpUrl = ref('')
 
 const dirty = computed(
   () => creating.value && Boolean(name.value.trim() || expiry.value)
@@ -78,7 +82,22 @@ function issue(agentId: string, agentName: string): void {
   })
 }
 
-onMounted(() => void run(() => agents.load()))
+/**
+ * Reads the agents and the address their clients connect to.
+ *
+ * A failure to read the address is not worth stopping the page for: the rest
+ * of it works, and the connection blocks are simply not offered.
+ */
+onMounted(() =>
+  void run(async () => {
+    await agents.load()
+    try {
+      mcpUrl.value = (await readConnectionUrl()).url
+    } catch {
+      mcpUrl.value = ''
+    }
+  })
+)
 </script>
 
 <template>
@@ -110,6 +129,7 @@ onMounted(() => void run(() => agents.load()))
           @revoke="(tokenId) => run(() => agents.revoke(row.agent.agent_id, tokenId))"
           @remove="run(() => agents.remove(row.agent.agent_id))"
           @simulate="router.push({ name: 'permissions', query: { agent: row.agent.agent_id } })"
+          @connect="connecting = row.agent.name"
         />
       </div>
     </div>
@@ -147,13 +167,35 @@ onMounted(() => void run(() => agents.load()))
       <TokenReveal
         :token="reveal.token"
         :agent-name="reveal.agentName"
+        :mcp-url="mcpUrl"
         @done="reveal = null"
       />
+    </BaseModal>
+
+    <BaseModal
+      v-if="connecting"
+      :title="t('agents.connectTitle')"
+      @close="connecting = null"
+    >
+      <div class="connect">
+        <McpConnection v-if="mcpUrl" :url="mcpUrl" :name="connecting" />
+        <BaseAlert v-else tone="negative">{{ t('agents.connectUnavailable') }}</BaseAlert>
+
+        <div class="buttons">
+          <BaseButton @click="connecting = null">{{ t('common.close') }}</BaseButton>
+        </div>
+      </div>
     </BaseModal>
   </AppShell>
 </template>
 
 <style scoped>
+.connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--rm-space-3);
+}
+
 .buttons {
   display: flex;
   justify-content: flex-end;

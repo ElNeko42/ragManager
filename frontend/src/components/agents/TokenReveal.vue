@@ -5,8 +5,9 @@ import { useI18n } from 'vue-i18n'
 import BaseAlert from '../ui/BaseAlert.vue'
 import BaseButton from '../ui/BaseButton.vue'
 import BaseIcon from '../ui/BaseIcon.vue'
+import McpConnection from './McpConnection.vue'
 
-const props = defineProps<{ token: string; agentName: string }>()
+const props = defineProps<{ token: string; agentName: string; mcpUrl: string }>()
 const emit = defineEmits<{ done: [] }>()
 
 const { t } = useI18n()
@@ -49,6 +50,11 @@ async function copy(): Promise<void> {
 
     <p v-if="failed" class="failed">{{ t('agents.copyFailed') }}</p>
     <p class="hint">{{ t('agents.tokenHint') }}</p>
+
+    <details v-if="mcpUrl" class="connect" open>
+      <summary>{{ t('agents.connectTitle') }}</summary>
+      <McpConnection :url="mcpUrl" :token="token" :name="agentName" />
+    </details>
   </div>
 </template>
 
@@ -87,6 +93,18 @@ async function copy(): Promise<void> {
   margin: 0;
   color: var(--rm-neg);
   font-size: 12.5px;
+}
+
+.connect {
+  border-top: var(--rm-border-width) solid var(--rm-border);
+  padding-top: var(--rm-space-3);
+}
+
+.connect summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: var(--rm-space-3);
 }
 
 .hint {

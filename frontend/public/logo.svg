@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="ragManager">
+  <rect width="256" height="256" rx="64" fill="#1B4FE0"/>
+  <path
+    d="M40 60a18 18 0 0 1 18-18h58l22 25h60a18 18 0 0 1 18 18v96a18 18 0 0 1-18 18H58a18 18 0 0 1-18-18Z"
+    fill="#fff"/>
+  <path d="M118 132v76a57 20 0 0 0 114 0v-76Z" fill="#1B4FE0"/>
+  <g fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round">
+    <path d="M118 163a57 20 0 0 0 114 0"/>
+    <path d="M118 190a57 20 0 0 0 114 0"/>
+    <path d="M118 132v76a57 20 0 0 0 114 0v-76"/>
+  </g>
+  <ellipse cx="175" cy="132" rx="57" ry="20" fill="#1B4FE0" stroke="#fff" stroke-width="9"/>
+</svg>

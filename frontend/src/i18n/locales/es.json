@@ -47,7 +47,15 @@
     "tokenFor": "Token de {name}",
     "tokenHint": "Solo se guarda su hash, así que no se puede volver a mostrar. Si se pierde, emite otro y revoca este.",
     "tokenTitle": "TOKEN.UNAVEZ",
-    "tokens": "Tokens ({live} activos)"
+    "tokens": "Tokens ({live} activos)",
+    "connect": "Conectar",
+    "connectTitle": "Conectar un cliente MCP",
+    "connectLead": "Pega uno de estos en el cliente que vaya a leer este almacén.",
+    "connectPlaceholder": "Sustituye rmg_your_token_here por un token. El token se muestra una sola vez, al emitirlo, así que si ya no lo tienes emite otro.",
+    "connectCli": "Claude Code",
+    "connectFile": "Fichero de configuración",
+    "connectCheck": "Comprobarlo desde una terminal",
+    "connectUnavailable": "No se ha podido leer la dirección del endpoint MCP. Recarga la página; si sigue fallando, la API no está respondiendo."
   },
   "app": {
     "name": "ragManager",

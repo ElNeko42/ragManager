@@ -61,7 +61,7 @@ async function leave(): Promise<void> {
   <div class="shell">
     <header ref="bar" :class="['bar', { tight }]">
       <div class="brand">
-        <span class="mark" aria-hidden="true">rM</span>
+        <img class="mark" src="/logo.svg" alt="" width="34" height="34" />
         <span class="naming">
           <strong>{{ t('app.name') }}</strong>
           <span class="tagline">{{ t('app.tagline') }}</span>
@@ -146,18 +146,10 @@ async function leave(): Promise<void> {
 }
 
 .mark {
-  display: grid;
-  place-items: center;
   flex: none;
   width: 34px;
   height: 34px;
-  border: var(--rm-border-width) solid var(--rm-border);
   border-radius: 9px;
-  background: var(--rm-accent);
-  color: var(--rm-accent-ink);
-  font-family: var(--rm-font-display);
-  font-weight: 700;
-  font-size: 16px;
 }
 
 .naming {

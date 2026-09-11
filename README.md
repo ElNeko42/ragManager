@@ -391,8 +391,21 @@ endpoint. Issue one in the panel, under Agents, and grant the agent the
 folders it should read; a token that has been granted nothing can connect and
 will find nothing.
 
-Point a client at the endpoint with the token in an `Authorization` header.
-Most clients take a configuration like this:
+The panel writes the configuration for you. It appears where the token does,
+at the moment one is issued, which is the only moment the token exists in
+readable form — the command, the configuration file and a curl to check it
+with, each with a copy button. **Connect** on an agent's card shows the same
+three afterwards, with a placeholder where the token goes.
+
+The address comes from the request rather than from a setting, so an instance
+behind a proxy reports the address its agents can actually reach.
+
+Point a client at the endpoint with the token in an `Authorization` header:
+
+```sh
+claude mcp add --transport http ragmanager https://your-host.example/mcp/ \
+  --header "Authorization: Bearer rmg_your_token_here"
+```
 
 ```json
 {
@@ -497,6 +510,7 @@ backend/            Django project
   apps/common/      the few helpers more than one app needs: paging, fields
   apps/mcp/         the MCP endpoint: JSON-RPC envelope, tools, transport
 frontend/           Vue 3 single page application
+  public/              the logo, drawn as SVG, and the icons derived from it
   src/components/ui/   the pieces every screen is built from
   src/composables/     behaviour shared between screens
   src/stores/          Pinia stores, one per area of the panel

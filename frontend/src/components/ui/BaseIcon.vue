@@ -48,7 +48,11 @@ const PATHS: Record<string, string[]> = {
   close: ['m6 6 12 12', 'm18 6-12 12'],
   check: ['m5 12 5 5L20 7'],
   copy: ['M9 9h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1Z', 'M5 15H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v1'],
-  move: ['M5 8V6a1 1 0 0 1 1-1h5l2 2.5h5a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H9', 'm7 12-3 3 3 3', 'M4 15h8']
+  move: ['M5 8V6a1 1 0 0 1 1-1h5l2 2.5h5a1 1 0 0 1 1 1V17a1 1 0 0 1-1 1H9', 'm7 12-3 3 3 3', 'M4 15h8'],
+  link: [
+    'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7L11.3 7',
+    'M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7L12.7 17'
+  ]
 }
 
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })
