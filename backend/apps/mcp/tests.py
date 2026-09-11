@@ -357,3 +357,102 @@ class FolderArgumentTests(TestCase):
         ):
             self.call({"query": "anything", "folder_id": str(self.folder.pk)})
         self.assertEqual(AgentQuery.objects.first().source, QuerySource.MCP)
+
+
+class EndpointAddressTests(TestCase):
+    """The endpoint answers at the address this server tells clients to use."""
+
+    def setUp(self):
+        """Issue a token for an agent that has been granted nothing."""
+        self.agent = Agent.objects.create(name="caller")
+        self.token = issue_token(self.agent)[1]
+
+    def ping(self, path):
+        """Post one message to a spelling of the endpoint address."""
+        return self.client.post(
+            path,
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+            content_type="application/json",
+            secure=True,
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        )
+
+    def test_the_endpoint_answers_with_a_trailing_slash(self):
+        """This is the spelling the panel hands out."""
+        self.assertEqual(self.ping("/mcp/").status_code, 200)
+
+    def test_the_endpoint_answers_without_one(self):
+        """It is the spelling this server publishes as its resource identifier.
+
+        A client that is handed an address and then redirected away from it on
+        a POST loses its body and reports that there is no server here.
+        """
+        self.assertEqual(self.ping("/mcp").status_code, 200)
+
+    def test_the_refusal_points_at_the_metadata_either_way(self):
+        """A client that cannot find the flow cannot enter it."""
+        for path in ("/mcp", "/mcp/"):
+            answer = self.client.post(path, "{}", content_type="application/json", secure=True)
+            self.assertEqual(answer.status_code, 401)
+            self.assertIn("resource_metadata=", answer["WWW-Authenticate"])
+
+    def test_a_body_without_a_declared_length_is_let_through_either_way(self):
+        """A streaming client may send one, and the size guard exempts this path."""
+        from apps.common.paths import is_mcp
+
+        self.assertTrue(is_mcp("/mcp"))
+        self.assertTrue(is_mcp("/mcp/"))
+
+
+class AcceptHeaderTests(TestCase):
+    """What the endpoint does with the Accept headers clients actually send."""
+
+    def setUp(self):
+        """Issue a token for an agent that has been granted nothing."""
+        self.agent = Agent.objects.create(name="caller")
+        self.token = issue_token(self.agent)[1]
+
+    def test_a_client_opening_a_stream_is_told_how_to_authorize(self):
+        """A complaint about content types is not a challenge it can act on.
+
+        Negotiating strictly happens before the request is authenticated, so a
+        client that asks only for an event stream never learns that a token
+        would have got it in, and reports the server as unreachable.
+        """
+        answer = self.client.get("/mcp/", secure=True, HTTP_ACCEPT="text/event-stream")
+        self.assertEqual(answer.status_code, 401)
+        self.assertIn("resource_metadata=", answer["WWW-Authenticate"])
+
+    def test_a_stream_is_declined_rather_than_negotiated_away(self):
+        """The specification has a status for a server that opens no stream."""
+        answer = self.client.get(
+            "/mcp/",
+            secure=True,
+            HTTP_ACCEPT="text/event-stream",
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        )
+        self.assertEqual(answer.status_code, 405)
+
+    def test_the_accept_header_the_transport_asks_for_is_answered(self):
+        """Clients of this transport are told to offer both."""
+        answer = self.client.post(
+            "/mcp/",
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+            content_type="application/json",
+            secure=True,
+            HTTP_ACCEPT="application/json, text/event-stream",
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        )
+        self.assertEqual(answer.status_code, 200)
+
+    def test_a_caller_that_accepts_nothing_in_particular_is_answered_too(self):
+        """A probe with an odd header must not look like a broken server."""
+        answer = self.client.post(
+            "/mcp/",
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+            content_type="application/json",
+            secure=True,
+            HTTP_ACCEPT="application/x-something-else",
+            HTTP_AUTHORIZATION=f"Bearer {self.token}",
+        )
+        self.assertEqual(answer.status_code, 200)

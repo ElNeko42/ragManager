@@ -36,13 +36,33 @@ async function submit(): Promise<void> {
   error.value = ''
   try {
     await session.logIn(email.value, password.value)
-    const next = typeof route.query.next === 'string' ? route.query.next : '/'
-    await router.push(next)
+    await continueTo(typeof route.query.next === 'string' ? route.query.next : '/')
   } catch (cause) {
     error.value = describe(cause)
   } finally {
     submitting.value = false
   }
+}
+
+/**
+ * Goes on to wherever the visitor was heading before being asked to sign in.
+ *
+ * Only a path on this same site is followed, and never one starting with two
+ * slashes, which a browser reads as another host: an address taken from the
+ * query string is written by whoever sent the link, so following it anywhere
+ * would turn this form into a way to land people on a page of their choosing.
+ *
+ * Pages the panel does not itself render, such as the approval screen of the
+ * authorization flow, are reached by leaving the application rather than by
+ * routing inside it, which would look for a screen that does not exist.
+ */
+async function continueTo(next: string): Promise<void> {
+  const safe = next.startsWith('/') && !next.startsWith('//') ? next : '/'
+  if (router.resolve(safe).matched.length > 0) {
+    await router.push(safe)
+    return
+  }
+  window.location.assign(safe)
 }
 
 /**

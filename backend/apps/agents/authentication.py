@@ -1,10 +1,12 @@
 """Bearer token authentication for external agents."""
 
+from django.conf import settings
 from django.views.decorators.debug import sensitive_variables
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 from rest_framework.exceptions import AuthenticationFailed
 
 from apps.agents.models import AgentToken
+from apps.common.paths import is_mcp
 from apps.agents.tokens import hash_token
 
 INVALID_TOKEN_MESSAGE = "Invalid token"
@@ -38,8 +40,31 @@ class AgentTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed(INVALID_TOKEN_MESSAGE)
         if not stored.is_valid():
             raise AuthenticationFailed(INVALID_TOKEN_MESSAGE)
+        if not stored.is_for(self.resource(request)):
+            raise AuthenticationFailed(INVALID_TOKEN_MESSAGE)
         return stored.agent, stored
 
+    def resource(self, request):
+        """Return what the caller is reaching for, as a token audience.
+
+        A token approved through the authorization flow was bound to one
+        resource, and presenting it anywhere else is exactly the replay the
+        binding exists to stop. A token the owner issued by hand carries no
+        audience and is not held to this.
+        """
+        base = request.build_absolute_uri("/").rstrip("/")
+        if is_mcp(request.path):
+            return f"{base}{settings.MCP_PATH}".rstrip("/")
+        return f"{base}{request.path}"
+
     def authenticate_header(self, request):
-        """Return the challenge sent alongside a 401 response."""
-        return self.keyword
+        """Return the challenge sent alongside a 401 response.
+
+        On the MCP endpoint the challenge names the document describing how to
+        be authorized, which is how a client that arrived without a token finds
+        its way into the flow rather than simply failing.
+        """
+        if not is_mcp(request.path):
+            return self.keyword
+        where = request.build_absolute_uri("/.well-known/oauth-protected-resource")
+        return f'{self.keyword} resource_metadata="{where}"'

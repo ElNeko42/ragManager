@@ -13,7 +13,10 @@ export default defineConfig({
     hmr: publicHost ? { host: publicHost, clientPort: 443, protocol: 'wss' } : undefined,
     proxy: {
       '/health': { target: proxyTarget, changeOrigin: false },
-      '/api': { target: proxyTarget, changeOrigin: false }
+      '/api': { target: proxyTarget, changeOrigin: false },
+      '/mcp': { target: proxyTarget, changeOrigin: false },
+      '/oauth': { target: proxyTarget, changeOrigin: false },
+      '/.well-known': { target: proxyTarget, changeOrigin: false }
     }
   }
 })

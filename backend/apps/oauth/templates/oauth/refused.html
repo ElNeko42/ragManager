@@ -1,0 +1,11 @@
+{% extends "oauth/base.html" %}
+{% block title %}Cannot connect — ragManager{% endblock %}
+{% block body %}
+  <h1>This request cannot be answered</h1>
+  <p>{{ description }}</p>
+  <p class="hint">
+    Nothing was approved and no browser was sent anywhere. The reason is
+    <code>{{ code }}</code>, which is for whoever set up the connector rather
+    than for you.
+  </p>
+{% endblock %}

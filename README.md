@@ -421,6 +421,40 @@ claude mcp add --transport http ragmanager https://your-host.example/mcp/ \
 }
 ```
 
+### Connecting claude.ai
+
+Claude Code and Claude Desktop take a token in a header. claude.ai has no such
+field: it connects through OAuth, so this server is one. Add a custom connector
+pointing at `https://your-host.example/mcp/` and the rest happens in a browser:
+
+1. It reads `/.well-known/oauth-protected-resource`, which the MCP endpoint
+   names in the `WWW-Authenticate` header of its refusal, and follows it to
+   this instance's authorization server.
+2. It registers itself, which grants it nothing at all.
+3. You are sent to an approval screen, signing in first if you are not already.
+   It asks **which agent the connector acts as**: the connector then reads
+   exactly what that agent was granted, and the permissions, the record of what
+   was searched and the rate limit all work as they always did, because what it
+   ends up holding is an ordinary agent token.
+4. Approving hands it a token that expires in an hour and a renewal it uses on
+   its own.
+
+A connector's token appears on the agent's card with every other token, and
+revoking it there withdraws the renewal with it, which stops the connector
+rather than pausing it for an hour.
+
+The flow is OAuth 2.1: the proof key is required and only `S256` is accepted,
+redirect addresses are matched exactly against the ones registered, an
+authorization code is good once and for two minutes, and a renewal is rotated
+on use. A code or a renewal that turns up twice is taken as a copy in somebody
+else's hands, and everything descended from it is withdrawn rather than
+guessing which of the two callers was the real one. Tokens are bound to this
+MCP endpoint and refused anywhere else.
+
+This needs the instance to be reachable over the public internet on https,
+since the approval happens in the user's browser and the callback goes back to
+the client.
+
 Three tools are offered:
 
 | Tool | What it does |
@@ -509,6 +543,7 @@ backend/            Django project
   apps/search/      one query against every collection an agent may read
   apps/common/      the few helpers more than one app needs: paging, fields
   apps/mcp/         the MCP endpoint: JSON-RPC envelope, tools, transport
+  apps/oauth/       the authorization flow a connector goes through
 frontend/           Vue 3 single page application
   public/              the logo, drawn as SVG, and the icons derived from it
   src/components/ui/   the pieces every screen is built from

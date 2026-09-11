@@ -22,6 +22,20 @@ from apps.agents.tokens import issue_token
 from apps.drive.views import UUID_PATTERN
 
 
+def withdraw_connector(token):
+    """Withdraw the renewal that came with a connector's token.
+
+    Takes the token being revoked. Does nothing for one the owner issued by
+    hand, which has no renewal to withdraw. Imported here rather than at the
+    top because the authorization server builds on agents, and the dependency
+    only runs the other way at the moment somebody revokes something.
+    """
+    from apps.oauth.service import withdraw_below
+
+    for refresh in token.refreshes.all():
+        withdraw_below(refresh)
+
+
 class AgentViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     """Registers agents, issues their tokens and takes them away again."""
 
@@ -125,9 +139,16 @@ class AgentViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
         The row survives so that the panel can still show the token existed.
         Returns the updated token, or 404 when it does not belong to the agent.
+
+        A token a connector obtained through the authorization flow came with
+        the means to renew itself, so withdrawing only the token would stop it
+        for an hour and no longer: the renewal is withdrawn with it, which is
+        what makes this button mean what it says.
         """
         token = get_object_or_404(AgentToken, pk=token_id, agent=self.get_object())
         if token.revoked_at is None:
-            token.revoked_at = timezone.now()
-            token.save(update_fields=["revoked_at"])
+            with transaction.atomic():
+                token.revoked_at = timezone.now()
+                token.save(update_fields=["revoked_at"])
+                withdraw_connector(token)
         return Response(AgentTokenSerializer(token).data)

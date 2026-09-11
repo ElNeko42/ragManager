@@ -1,0 +1,97 @@
+{# The pages a browser sees during the authorization flow. Rendered by the
+   server rather than by the panel, because they have to work whatever state
+   the panel build is in and because a screen that hands out access should not
+   depend on a script loading first. #}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <title>{% block title %}ragManager{% endblock %}</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #14161c;
+        --muted: #5b6170;
+        --panel: #ffffff;
+        --ground: #f4f5f8;
+        --line: #d9dce4;
+        --accent: #1b4fe0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #eef0f6;
+          --muted: #a2a8b8;
+          --panel: #171a22;
+          --ground: #0f1116;
+          --line: #2c313d;
+          --accent: #4f7bff;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 460px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 28px;
+        box-sizing: border-box;
+      }
+      .logo { width: 44px; height: 44px; display: block; margin-bottom: 18px; }
+      h1 { margin: 0 0 6px; font-size: 20px; }
+      p { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+      .what {
+        margin: 18px 0;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--ground);
+        font-size: 13.5px;
+      }
+      .what code { overflow-wrap: anywhere; font-size: 12.5px; }
+      label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+      select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+        margin-bottom: 6px;
+      }
+      .row { display: flex; gap: 10px; margin-top: 22px; }
+      button {
+        flex: 1;
+        padding: 11px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--ink);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.approve { background: var(--accent); border-color: var(--accent); color: #fff; }
+      .problem { color: #c0392b; font-size: 13px; }
+      .hint { font-size: 12.5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img class="logo" src="/logo.svg" alt="" width="44" height="44" />
+      {% block body %}{% endblock %}
+    </main>
+  </body>
+</html>

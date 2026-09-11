@@ -12,6 +12,8 @@ import json
 import logging
 
 from django.conf import settings
+from rest_framework.exceptions import NotAcceptable
+from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -33,10 +35,32 @@ INSTRUCTIONS = (
 )
 
 
+class AnswerInJson(DefaultContentNegotiation):
+    """Answers in JSON whatever the caller said it would accept.
+
+    A client of this transport is told to offer both JSON and an event stream,
+    and one that opens a listening stream offers only the stream. Refusing
+    that outright, which is what negotiating strictly does, happens before the
+    request is ever authenticated: the client is handed a complaint about
+    content types instead of the challenge that would tell it how to get a
+    token, and reports that there is no server here at all. This server has
+    one thing to say and says it in JSON; a caller that cannot read that finds
+    out from the answer rather than from a refusal to produce one.
+    """
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        """Return the JSON renderer rather than refusing an unusual Accept."""
+        try:
+            return super().select_renderer(request, renderers, format_suffix)
+        except NotAcceptable:
+            return renderers[0], renderers[0].media_type
+
+
 class McpView(APIView):
     """Speaks MCP over HTTP to an agent holding a token."""
 
     permission_classes = [IsAgent]
+    content_negotiation_class = AnswerInJson
 
     message = None
     is_searching = False

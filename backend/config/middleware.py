@@ -3,6 +3,8 @@
 from django.conf import settings
 from django.http import JsonResponse
 
+from apps.common.paths import is_mcp
+
 MULTIPART_FRAMING_ALLOWANCE = 4096
 METHODS_WITH_BODY = frozenset({"POST", "PUT", "PATCH"})
 
@@ -33,7 +35,7 @@ class RequestSizeLimitMiddleware:
         the upload limit this guards.
         """
         declared = request.META.get("CONTENT_LENGTH") or ""
-        exempt = request.path.startswith(settings.MCP_PATH)
+        exempt = is_mcp(request.path)
         if request.method in METHODS_WITH_BODY and not declared.isdigit() and not exempt:
             return JsonResponse(
                 {"detail": "A Content-Length header is required"},

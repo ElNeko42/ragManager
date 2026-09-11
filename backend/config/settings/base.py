@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "apps.ingestion",
     "apps.search",
     "apps.mcp",
+    "apps.oauth",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -185,6 +186,15 @@ MAX_UPLOAD_BYTES = env_int("MAX_UPLOAD_BYTES", 536870912)
 RAGMANAGER_VERSION = "0.1.0"
 
 MCP_PATH = "/mcp/"
+
+# The authorization flow that lets a connector obtain a token through a
+# browser instead of the owner copying one. An access token is short lived
+# because a connector can always renew it; a code is shorter still, since it
+# travels through a redirect.
+OAUTH_CODE_LIFETIME_SECONDS = env_int("OAUTH_CODE_LIFETIME_SECONDS", 120)
+OAUTH_ACCESS_TOKEN_LIFETIME_SECONDS = env_int("OAUTH_ACCESS_TOKEN_LIFETIME_SECONDS", 3600)
+OAUTH_REFRESH_TOKEN_LIFETIME_SECONDS = env_int("OAUTH_REFRESH_TOKEN_LIFETIME_SECONDS", 2592000)
+OAUTH_TOKEN_PREFIX = "rmo_"
 
 EMBEDDING_API_KEY = env("EMBEDDING_API_KEY")
 
